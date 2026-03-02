@@ -1,0 +1,94 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Pumu",
+  "projectDescription": "Fast, concurrent disk space management tool for developers",
+  "theme": "aspen",
+  "primaryColor": "#10b981",
+  "lightColor": "#34d399",
+  "darkColor": "#059669",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Commands",
+            "pages": [
+              "commands/default-mode",
+              "commands/list",
+              "commands/sweep",
+              "commands/repair",
+              "commands/prune"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/package-managers",
+              "guides/performance",
+              "guides/safety"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/use-cases"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Modules",
+            "pages": [
+              "api/scanner",
+              "api/detector",
+              "api/installer",
+              "api/checker",
+              "api/analyzer"
+            ]
+          },
+          {
+            "group": "UI Components",
+            "pages": [
+              "api/multiselect"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-language support (npm, pnpm, yarn, bun, deno, cargo, go, pip)",
+    "Blazingly fast concurrent scanning and deletion using goroutines",
+    "Interactive TUI for folder selection",
+    "Smart detection via lockfiles and manifests",
+    "Repair mode for corrupted dependencies",
+    "Smart prune with score-based intelligent cleanup"
+  ],
+  "publicApiSurface": [
+    "pumu (default refresh mode)",
+    "pumu list",
+    "pumu sweep [--reinstall] [--no-select]",
+    "pumu repair [--verbose]",
+    "pumu prune [--threshold] [--dry-run]",
+    "scanner.SweepDir()",
+    "scanner.RepairDir()",
+    "scanner.PruneDir()",
+    "pkg.DetectManager()",
+    "pkg.InstallDeps()",
+    "pkg.CheckHealth()",
+    "pkg.CalculateScore()",
+    "ui.NewMultiSelectModel()"
+  ]
+}
