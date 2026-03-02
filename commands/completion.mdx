@@ -1,0 +1,121 @@
+---
+title: 'completion'
+description: 'Generate shell autocompletion scripts for Pumu'
+---
+
+The `completion` command generates shell completion scripts that enable tab completion for Pumu commands, flags, and arguments in your shell.
+
+## Usage
+
+```bash
+pumu completion [shell]
+```
+
+## Supported shells
+
+- `bash` - Bash shell
+- `zsh` - Z shell
+- `fish` - Fish shell
+- `powershell` - PowerShell
+
+## Installation
+
+### Bash
+
+```bash
+# Add to current session
+source <(pumu completion bash)
+
+# Add to ~/.bashrc for persistence
+echo 'source <(pumu completion bash)' >> ~/.bashrc
+```
+
+### Zsh
+
+```bash
+# Add to current session
+source <(pumu completion zsh)
+
+# Add to ~/.zshrc for persistence
+echo 'source <(pumu completion zsh)' >> ~/.zshrc
+
+# If using Oh My Zsh, you may need to reload
+autoload -U compinit && compinit
+```
+
+### Fish
+
+```bash
+# Add to current session
+pumu completion fish | source
+
+# Add to ~/.config/fish/config.fish for persistence
+pumu completion fish > ~/.config/fish/completions/pumu.fish
+```
+
+### PowerShell
+
+```powershell
+# Add to current session
+pumu completion powershell | Out-String | Invoke-Expression
+
+# Add to PowerShell profile for persistence
+pumu completion powershell >> $PROFILE
+```
+
+## What gets autocompleted
+
+Once installed, you can use Tab to autocomplete:
+
+- **Commands**: `pumu <Tab>` shows `list`, `sweep`, `repair`, `prune`, `completion`, `help`
+- **Flags**: `pumu sweep --<Tab>` shows `--reinstall`, `--no-select`, `--path`, `--help`
+- **File paths**: `pumu -p <Tab>` provides directory completion
+
+## Examples
+
+### Check available commands
+
+```bash
+pumu <Tab><Tab>
+# Shows: completion  help  list  prune  repair  sweep
+```
+
+### Autocomplete sweep flags
+
+```bash
+pumu sweep --<Tab><Tab>
+# Shows: --help  --no-select  --path  --reinstall
+```
+
+### Autocomplete path flag
+
+```bash
+pumu list -p ~/pro<Tab>
+# Completes to: pumu list -p ~/projects/
+```
+
+## Verification
+
+After installing completion, verify it works:
+
+```bash
+pumu sw<Tab>
+# Should autocomplete to: pumu sweep
+```
+
+## Troubleshooting
+
+<Accordion title="Completions not working after installation">
+  - Restart your shell or run `source ~/.bashrc` (or equivalent for your shell)
+  - Verify the completion script is loaded: `type _pumu` (bash/zsh) or `complete -p pumu` (bash)
+  - For zsh, ensure `compinit` is called after sourcing completions
+</Accordion>
+
+<Accordion title="Completions work but show wrong options">
+  - Regenerate the completion script: `pumu completion bash > ~/.local/share/bash-completion/completions/pumu`
+  - Clear completion cache: `rm ~/.zcompdump*` (zsh) and restart shell
+</Accordion>
+
+## Related commands
+
+- [help](/commands/help) - Show help for any command

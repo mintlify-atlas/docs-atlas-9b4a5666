@@ -1,0 +1,118 @@
+---
+title: 'help'
+description: 'Get help for any Pumu command'
+---
+
+The `help` command displays usage information for Pumu commands, including available flags, examples, and descriptions.
+
+## Usage
+
+```bash
+pumu help [command]
+```
+
+## Examples
+
+### Show general help
+
+```bash
+pumu help
+```
+
+Output:
+```
+pumu scans your filesystem for heavy dependency folders
+(node_modules, target, .venv, etc.) and lets you sweep, list,
+repair or prune them with ease.
+
+Running pumu with no subcommand refreshes the current directory.
+
+Usage:
+  pumu [flags]
+  pumu [command]
+
+Available Commands:
+  list        List heavy dependency folders (dry-run)
+  sweep       Sweep (delete) heavy dependency folders
+  repair      Repair dependency folders
+  prune       Prune dependency folders by staleness score
+  completion  Generate the autocompletion script for the specified shell
+  help        Help about any command
+
+Flags:
+  -h, --help          help for pumu
+  -p, --path string   Root path to scan (default ".")
+  -v, --version       version for pumu
+```
+
+### Get help for a specific command
+
+```bash
+pumu help sweep
+```
+
+Output:
+```
+Scans for heavy dependency folders and removes them.
+Use --reinstall to automatically reinstall packages after deletion,
+and --no-select to skip the interactive selection prompt.
+
+Usage:
+  pumu sweep [flags]
+
+Examples:
+  pumu sweep                              # interactive selection
+  pumu sweep --no-select                  # delete all without prompting
+  pumu sweep --reinstall                  # delete and reinstall
+  pumu sweep --no-select --reinstall ~/projects
+
+Flags:
+  -h, --help         help for sweep
+      --no-select    Skip interactive selection (delete/reinstall all found folders)
+      --reinstall    Reinstall packages after removing their folders
+
+Global Flags:
+  -p, --path string   Root path to scan (default ".")
+```
+
+## Alternative syntax
+
+You can also use the `--help` or `-h` flag directly on any command:
+
+```bash
+# These are equivalent
+pumu help list
+pumu list --help
+pumu list -h
+```
+
+## Get help for subcommands
+
+```bash
+pumu help repair
+pumu help prune
+pumu help completion
+```
+
+## Show version
+
+While not technically part of the help command, you can check Pumu's version:
+
+```bash
+pumu --version
+# Output: pumu version v1.2.1-rc.1
+```
+
+## Tips
+
+<Tip>
+Use `pumu help` to quickly discover all available commands without leaving your terminal.
+</Tip>
+
+<Tip>
+Add `--help` to any command when you forget the available flags or need to check default values.
+</Tip>
+
+## Related commands
+
+- [completion](/commands/completion) - Generate shell autocompletion scripts

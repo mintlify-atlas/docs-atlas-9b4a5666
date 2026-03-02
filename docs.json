@@ -38,7 +38,9 @@
               "commands/list",
               "commands/sweep",
               "commands/repair",
-              "commands/prune"
+              "commands/prune",
+              "commands/completion",
+              "commands/help"
             ]
           },
           {
@@ -67,7 +69,8 @@
               "api/detector",
               "api/installer",
               "api/checker",
-              "api/analyzer"
+              "api/analyzer",
+              "api/utilities"
             ]
           },
           {

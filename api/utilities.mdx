@@ -1,0 +1,128 @@
+---
+title: 'Utilities'
+description: 'Helper functions for file system operations'
+---
+
+The `pkg` package includes several utility functions for common file system operations used throughout Pumu.
+
+## File System Checks
+
+### FileExists
+
+Reports whether a path exists and is a regular file (not a directory).
+
+```go
+func FileExists(path string) bool
+```
+
+<ParamField path="path" type="string" required>
+  The file path to check
+</ParamField>
+
+<ResponseField name="bool" type="bool">
+  Returns `true` if the path exists and is a file, `false` otherwise
+</ResponseField>
+
+**Example usage:**
+
+```go
+if pkg.FileExists("/home/user/projects/app/package.json") {
+    fmt.Println("package.json found")
+}
+```
+
+**Behavior:**
+- Returns `false` if the path doesn't exist
+- Returns `false` if the path exists but is a directory
+- Returns `true` only if the path exists and is a regular file
+
+### DirExists
+
+Reports whether a path exists and is a directory.
+
+```go
+func DirExists(path string) bool
+```
+
+<ParamField path="path" type="string" required>
+  The directory path to check
+</ParamField>
+
+<ResponseField name="bool" type="bool">
+  Returns `true` if the path exists and is a directory, `false` otherwise
+</ResponseField>
+
+**Example usage:**
+
+```go
+if pkg.DirExists("/home/user/projects/app/node_modules") {
+    fmt.Println("node_modules directory exists")
+}
+```
+
+**Behavior:**
+- Returns `false` if the path doesn't exist
+- Returns `false` if the path exists but is a file
+- Returns `true` only if the path exists and is a directory
+
+## Directory Removal
+
+### RemoveDirectory
+
+Synchronously removes a directory and all its contents using `os.RemoveAll`. Returns the duration it took to complete the removal.
+
+```go
+func RemoveDirectory(targetPath string) (time.Duration, error)
+```
+
+<ParamField path="targetPath" type="string" required>
+  The directory path to remove
+</ParamField>
+
+<ResponseField name="duration" type="time.Duration">
+  The time it took to remove the directory
+</ResponseField>
+
+<ResponseField name="error" type="error">
+  Returns an error if the removal fails, `nil` otherwise
+</ResponseField>
+
+**Example usage:**
+
+```go
+duration, err := pkg.RemoveDirectory("/home/user/projects/app/node_modules")
+if err != nil {
+    fmt.Printf("Failed to remove directory: %v\n", err)
+    return err
+}
+fmt.Printf("Removed in %v\n", duration)
+// Output: Removed in 1.23s
+```
+
+**Performance:**
+
+`RemoveDirectory` uses `os.RemoveAll`, which is optimized for modern file systems and typically provides the fastest directory removal from Go. For large directories (like `node_modules` with thousands of files), removal times can range from milliseconds to several seconds depending on:
+
+- Directory size (number of files and total bytes)
+- File system type (ext4, APFS, NTFS)
+- Storage medium (SSD vs HDD)
+- Operating system caching
+
+**Safety:**
+
+<Warning>
+This function permanently deletes directories and all their contents. There is no way to recover deleted files. Always ensure you're targeting the correct path.
+</Warning>
+
+## Usage in Pumu
+
+These utility functions are used throughout Pumu's codebase:
+
+- `FileExists` - Used by the detector to check for lock files (package-lock.json, Cargo.toml, etc.)
+- `DirExists` - Used by the scanner to verify dependency folders exist before attempting removal
+- `RemoveDirectory` - Used by the sweep and repair commands to delete heavy dependency folders
+
+## Related modules
+
+- [Detector](/api/detector) - Uses `FileExists` to detect package managers
+- [Scanner](/api/scanner) - Uses `RemoveDirectory` to delete folders
