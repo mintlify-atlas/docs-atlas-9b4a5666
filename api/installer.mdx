@@ -1,0 +1,270 @@
+---
+title: 'Installer'
+description: 'Dependency installation across multiple package managers'
+---
+
+The `installer` module handles dependency installation by executing the appropriate install commands for each detected package manager.
+
+## Overview
+
+Installer provides a unified interface for installing dependencies across different ecosystems. It automatically:
+
+- Selects the correct install command based on package manager
+- Runs the command in the project directory
+- Optionally suppresses output for batch operations
+- Handles both standard installs and rebuild operations
+
+## Functions
+
+### InstallDependencies
+
+Runs the appropriate install command based on the package manager.
+
+```go
+func InstallDependencies(dir string, pm PackageManager, silent bool) error
+```
+
+<ParamField path="dir" type="string" required>
+  The project directory where dependencies should be installed
+</ParamField>
+
+<ParamField path="pm" type="PackageManager" required>
+  The detected package manager to use for installation
+</ParamField>
+
+<ParamField path="silent" type="bool" required>
+  If true, suppresses stdout/stderr output (useful for batch operations)
+</ParamField>
+
+<ResponseField name="error" type="error">
+  Returns an error if the command fails or package manager is unknown
+</ResponseField>
+
+## Install Commands by Ecosystem
+
+### JavaScript/TypeScript
+
+```go
+case Bun:
+    cmd = exec.Command("bun", "install")
+case Pnpm:
+    cmd = exec.Command("pnpm", "install")
+case Yarn:
+    cmd = exec.Command("yarn", "install")
+case Npm:
+    cmd = exec.Command("npm", "install")
+case Deno:
+    cmd = exec.Command("deno", "install")  // Deno 2.x
+```
+
+### Rust
+
+```go
+case Cargo:
+    cmd = exec.Command("cargo", "build")
+```
+
+Note: Cargo uses `build` instead of `install` because building automatically fetches and compiles dependencies.
+
+### Go
+
+```go
+case Go:
+    cmd = exec.Command("go", "mod", "tidy")
+```
+
+`go mod tidy` ensures dependencies are downloaded and `go.sum` is updated.
+
+### Python
+
+```go
+case Pip:
+    cmd = exec.Command("pip", "install", "-r", "requirements.txt")
+```
+
+Note: This assumes `requirements.txt` exists. For production use, consider virtual environment handling.
+
+## Usage Examples
+
+### Example 1: Interactive Installation
+
+```go
+// From scanner/scanner.go - RefreshCurrentDir
+err := pkg.InstallDependencies(dir, pm, false)
+if err != nil {
+    return fmt.Errorf("failed to install dependencies: %v", err)
+}
+
+fmt.Println("🎉 Refresh complete!")
+```
+
+Output is shown to the user:
+```
+📦 Running npm install...
+added 234 packages in 12s
+🎉 Refresh complete!
+```
+
+### Example 2: Silent Batch Installation
+
+```go
+// From scanner/repair.go - repair mode
+fmt.Printf("   📦 Reinstalling...\n")
+err := pkg.InstallDependencies(proj.Dir, proj.PM, true)
+if err != nil {
+    color.Red("   ❌ Failed to reinstall: %v", err)
+    continue
+}
+color.Green("   ✅ Repaired!")
+```
+
+Output is suppressed to avoid cluttering the terminal during batch operations.
+
+### Example 3: Sequential Reinstallation
+
+```go
+// From scanner/scanner.go - reinstallDependencies
+for _, t := range targets {
+    fmt.Printf("📦 Reinstalling for %s (%s)...\n", t.Dir, t.PM)
+    err := pkg.InstallDependencies(t.Dir, t.PM, true)
+    if err != nil {
+        color.Red("❌ Failed to reinstall %s: %v", t.Dir, err)
+    } else {
+        color.Green("✅ Reinstalled %s", t.Dir)
+    }
+}
+```
+
+## Silent vs. Verbose Mode
+
+### Verbose Mode (silent=false)
+
+```go
+if !silent {
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    fmt.Printf("📦 Running %s install...\n", pm)
+    return cmd.Run()
+}
+```
+
+- Pipes output directly to terminal
+- Shows progress indicators (npm/pnpm progress bars)
+- Best for single, user-initiated operations
+- User sees what's happening in real-time
+
+### Silent Mode (silent=true)
+
+```go
+// Capture outputs to suppress default stdout mess
+_, err := cmd.CombinedOutput()
+return err
+```
+
+- Captures output internally
+- Only shows errors through return value
+- Best for batch operations (repairing multiple projects)
+- Cleaner output when processing many projects
+
+## Error Handling
+
+### Unknown Package Manager
+
+```go
+default:
+    return fmt.Errorf("unknown package manager, cannot run install")
+```
+
+If an unsupported or `Unknown` package manager is passed, the function returns an error immediately.
+
+### Command Execution Failures
+
+If the install command fails (e.g., network issues, missing dependencies), the error is propagated to the caller:
+
+```go
+err := pkg.InstallDependencies(dir, pm, false)
+if err != nil {
+    // Handle installation failure
+    return fmt.Errorf("installation failed: %w", err)
+}
+```
+
+## Working Directory
+
+The command always runs in the specified project directory:
+
+```go
+cmd.Dir = dir
+```
+
+This ensures that:
+- Lock files are read from the correct location
+- Dependencies are installed in the right place
+- Relative paths in configuration files work correctly
+
+## Best Practices
+
+### 1. Always Detect Before Installing
+
+```go
+pm := pkg.DetectManager(dir)
+if pm == pkg.Unknown {
+    return fmt.Errorf("cannot install: no package manager detected")
+}
+
+err := pkg.InstallDependencies(dir, pm, false)
+```
+
+### 2. Use Silent Mode for Batch Operations
+
+```go
+// When processing multiple projects
+for _, project := range projects {
+    // Silent mode keeps output clean
+    pkg.InstallDependencies(project.Dir, project.PM, true)
+}
+```
+
+### 3. Show Context to User
+
+```go
+fmt.Printf("📦 Reinstalling for %s (%s)...\n", dir, pm)
+err := pkg.InstallDependencies(dir, pm, true)
+if err != nil {
+    // User knows which project failed
+    color.Red("❌ Failed to reinstall %s: %v", dir, err)
+}
+```
+
+## Future Enhancements
+
+### Python Virtual Environment Handling
+
+Current implementation uses global `pip`. For production:
+
+```go
+case Pip:
+    venvPip := filepath.Join(dir, ".venv", "bin", "pip")
+    if FileExists(venvPip) {
+        cmd = exec.Command(venvPip, "install", "-r", "requirements.txt")
+    } else {
+        // Create venv first
+        exec.Command("python3", "-m", "venv", ".venv").Run()
+        cmd = exec.Command(venvPip, "install", "-r", "requirements.txt")
+    }
+```
+
+### Parallel Installation
+
+Currently sequential. Could add concurrent installation with semaphore:
+
+```go
+sem := make(chan struct{}, 5)  // Max 5 parallel installs
+for _, project := range projects {
+    go func(p project) {
+        sem <- struct{}{}
+        defer func() { <-sem }()
+        pkg.InstallDependencies(p.Dir, p.PM, true)
+    }(project)
+}
+```

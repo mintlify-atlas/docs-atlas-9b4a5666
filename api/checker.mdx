@@ -1,0 +1,374 @@
+---
+title: 'Checker'
+description: 'Health verification for project dependencies'
+---
+
+The `checker` module verifies the integrity of project dependencies by running ecosystem-specific health checks and diagnostics.
+
+## Overview
+
+Checker identifies issues like:
+- Missing dependencies
+- Version mismatches
+- Corrupted packages
+- Broken dependency trees
+- Build failures
+
+Each package manager has its own health check strategy optimized for its ecosystem.
+
+## Types
+
+### HealthResult
+
+Holds the result of a project health check.
+
+```go
+type HealthResult struct {
+    Dir     string           // Project directory
+    PM      PackageManager   // Detected package manager
+    Issues  []string         // List of detected issues
+    Healthy bool             // Overall health status
+}
+```
+
+## Functions
+
+### CheckHealth
+
+Verifies the integrity of a project's dependencies.
+
+```go
+func CheckHealth(dir string, pm PackageManager) HealthResult
+```
+
+<ParamField path="dir" type="string" required>
+  The project directory to check
+</ParamField>
+
+<ParamField path="pm" type="PackageManager" required>
+  The package manager to use for health checks
+</ParamField>
+
+<ResponseField name="HealthResult" type="HealthResult">
+  Returns a health result with detected issues and overall status
+</ResponseField>
+
+#### Example usage
+
+```go
+// From scanner/repair.go
+for _, proj := range projects {
+    result := pkg.CheckHealth(proj.Dir, proj.PM)
+    
+    if result.Healthy {
+        color.Green("   ✅ Healthy, skipping.")
+        continue
+    }
+    
+    // Unhealthy - show issues and repair
+    for _, issue := range result.Issues {
+        color.Red("   ❌ %s", issue)
+    }
+    // ... proceed with repair
+}
+```
+
+## Health Check Strategies
+
+### JavaScript/TypeScript (npm, pnpm, yarn, bun, deno)
+
+```go
+func checkNodeHealth(dir string, pm PackageManager, binary string) HealthResult
+```
+
+#### Step 1: Check for node_modules
+
+```go
+targetPath := dir + "/node_modules"
+if !FileExists(targetPath) && !DirExists(targetPath) {
+    result.Healthy = false
+    result.Issues = append(result.Issues, "node_modules not found")
+    return result
+}
+```
+
+#### Step 2: Run package manager diagnostics
+
+- **npm/pnpm**: `npm ls --json --depth=0`
+- **yarn**: `yarn check --verify-tree`
+- **bun**: `bun install --dry-run`
+- **deno**: `deno check .`
+
+#### Step 3: Parse Issues
+
+For npm/pnpm, parse JSON output to extract specific problems:
+
+```go
+func parseNpmLsOutput(output []byte) []string {
+    var data struct {
+        Problems []string `json:"problems"`
+    }
+    
+    json.Unmarshal(output, &data)
+    
+    // Limit to first 5 problems to avoid noise
+    if len(data.Problems) > 5 {
+        count := len(data.Problems)
+        data.Problems = append(data.Problems[:5], 
+            fmt.Sprintf("... and %d more issues", count-5))
+    }
+    
+    return data.Problems
+}
+```
+
+#### Example Issues Detected
+
+```
+❌ missing: react@18.2.0, required by my-app@1.0.0
+❌ invalid: typescript@5.0.0, expected 4.9.5
+❌ extraneous: lodash@4.17.21
+```
+
+### Rust (cargo)
+
+```go
+func checkCargoHealth(dir string) HealthResult
+```
+
+#### Step 1: Check for target directory
+
+```go
+targetPath := dir + "/target"
+if !DirExists(targetPath) {
+    result.Healthy = false
+    result.Issues = append(result.Issues, "target/ not found (never built)")
+    return result
+}
+```
+
+#### Step 2: Run cargo check
+
+```go
+cmd := exec.Command("cargo", "check")
+cmd.Dir = dir
+output, err := cmd.CombinedOutput()
+```
+
+#### Step 3: Parse Error Lines
+
+```go
+if err != nil {
+    result.Healthy = false
+    lines := strings.Split(string(output), "\n")
+    for _, line := range lines {
+        if strings.Contains(line, "error") {
+            result.Issues = append(result.Issues, strings.TrimSpace(line))
+            if len(result.Issues) >= 5 {
+                break
+            }
+        }
+    }
+}
+```
+
+#### Example Issues Detected
+
+```
+❌ error: failed to resolve: use of undeclared crate or module `tokio`
+❌ error: no default toolchain configured
+```
+
+### Go (go)
+
+```go
+func checkGoHealth(dir string) HealthResult
+```
+
+#### Runs go mod verify
+
+```go
+cmd := exec.Command("go", "mod", "verify")
+cmd.Dir = dir
+output, err := cmd.CombinedOutput()
+```
+
+Verifies that dependencies in `go.sum` have not been modified.
+
+#### Example Issues Detected
+
+```
+❌ github.com/pkg/errors v0.9.1: dir has been modified
+❌ go.sum is out of sync with go.mod
+```
+
+### Python (pip)
+
+```go
+func checkPipHealth(dir string) HealthResult
+```
+
+#### Step 1: Check for .venv
+
+```go
+venvPath := dir + "/.venv"
+if !DirExists(venvPath) {
+    result.Healthy = false
+    result.Issues = append(result.Issues, ".venv not found")
+    return result
+}
+```
+
+#### Step 2: Run pip check inside venv
+
+```go
+pipBin := filepath.Join(filepath.Clean(venvPath), "bin", "pip")
+cmd := exec.Command(pipBin, "check")
+cmd.Dir = dir
+output, err := cmd.CombinedOutput()
+```
+
+#### Example Issues Detected
+
+```
+❌ requests 2.28.0 has requirement urllib3<1.27,>=1.21.1, but you have urllib3 2.0.0
+❌ Package numpy has dependency conflicts
+```
+
+## Usage Patterns
+
+### Pattern 1: Repair Workflow
+
+```go
+result := pkg.CheckHealth(projectDir, pm)
+if !result.Healthy {
+    // Show issues to user
+    for _, issue := range result.Issues {
+        fmt.Println("❌", issue)
+    }
+    
+    // Repair by removing and reinstalling
+    pkg.RemoveDirectory(targetFolder)
+    pkg.InstallDependencies(projectDir, pm, false)
+}
+```
+
+### Pattern 2: Health Report
+
+```go
+for _, project := range projects {
+    result := pkg.CheckHealth(project.Dir, project.PM)
+    
+    fmt.Printf("\n📁 %s (%s)\n", project.Dir, project.PM)
+    if result.Healthy {
+        color.Green("   ✅ Healthy")
+    } else {
+        color.Red("   ❌ Issues found:")
+        for _, issue := range result.Issues {
+            fmt.Printf("      • %s\n", issue)
+        }
+    }
+}
+```
+
+### Pattern 3: Pre-operation Validation
+
+```go
+// Check health before deploying
+result := pkg.CheckHealth(".", pm)
+if !result.Healthy {
+    return fmt.Errorf("cannot deploy: dependencies are unhealthy")
+}
+
+// Safe to proceed
+runBuild()
+runDeploy()
+```
+
+## Issue Limiting
+
+All health checks limit issues to 5 to avoid overwhelming output:
+
+```go
+if len(result.Issues) >= 5 {
+    break
+}
+```
+
+For npm/pnpm with many issues:
+
+```go
+if len(data.Problems) > 5 {
+    count := len(data.Problems)
+    data.Problems = append(data.Problems[:5], 
+        fmt.Sprintf("... and %d more issues", count-5))
+}
+```
+
+## Error Handling
+
+### Unknown Package Manager
+
+```go
+default:
+    result.Issues = append(result.Issues, "Unknown package manager, cannot check health")
+    result.Healthy = false
+```
+
+### Command Execution Failures
+
+If the diagnostic command fails but doesn't provide specific issues:
+
+```go
+if len(result.Issues) == 0 {
+    result.Issues = append(result.Issues, fmt.Sprintf("%s health check failed", binary))
+}
+```
+
+## Best Practices
+
+### 1. Always Initialize Result
+
+```go
+result := HealthResult{Dir: dir, PM: pm, Healthy: true}
+```
+
+Start optimistic, set to false if issues found.
+
+### 2. Check Dependencies First
+
+Before running diagnostics, verify the dependency folder exists:
+
+```go
+if !DirExists(targetPath) {
+    result.Healthy = false
+    result.Issues = append(result.Issues, "dependencies not installed")
+    return result
+}
+```
+
+### 3. Graceful Degradation
+
+If parsing fails, use generic error message:
+
+```go
+issues := parseNpmLsOutput(output)
+if len(issues) > 0 {
+    result.Issues = issues
+} else {
+    result.Issues = append(result.Issues, "npm reports dependency issues")
+}
+```
+
+## Security Considerations
+
+### Path Injection Prevention
+
+For pip venv paths:
+
+```go
+pipBin := filepath.Join(filepath.Clean(venvPath), "bin", "pip")
+cmd := exec.Command(pipBin, "check") //nolint:gosec
+```
+
+Path is constructed from known project directory, not user input.

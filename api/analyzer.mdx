@@ -1,0 +1,433 @@
+---
+title: 'Analyzer'
+description: 'Smart pruning heuristics for safe dependency cleanup'
+---
+
+The `analyzer` module evaluates whether dependency and build folders are safe to delete using multiple heuristics. This powers Pumu's intelligent "prune" mode.
+
+## Overview
+
+Analyzer uses a scoring system (0-100) to determine deletion safety:
+
+- **High scores (80+)**: Very safe to delete (orphans, stale, build caches)
+- **Medium scores (50-79)**: Moderately safe (old but valid projects)
+- **Low scores (0-49)**: Risky to delete (active projects)
+
+The scoring is based on:
+1. Whether it's a build cache (always re-generable)
+2. Presence of a lockfile (orphan detection)
+3. Lockfile age (staleness)
+4. Git status (uncommitted changes)
+5. Recent activity
+
+## Types
+
+### PruneResult
+
+Holds the analysis result for a folder, deciding if it's safe to prune.
+
+```go
+type PruneResult struct {
+    Path         string  // Absolute path to the folder
+    Reason       string  // Human readable explanation
+    Size         int64   // Folder size in bytes
+    Score        int     // 0-100, higher = safer to delete
+    SafeToDelete bool    // Whether score meets the threshold
+}
+```
+
+## Functions
+
+### AnalyzeFolder
+
+Evaluates whether a dependency/build folder is safe to prune.
+
+```go
+func AnalyzeFolder(folderPath string, size int64) PruneResult
+```
+
+<ParamField path="folderPath" type="string" required>
+  The absolute path to the dependency or build folder
+</ParamField>
+
+<ParamField path="size" type="int64" required>
+  The calculated size of the folder in bytes
+</ParamField>
+
+<ResponseField name="PruneResult" type="PruneResult">
+  Returns analysis result with score, reason, and metadata
+</ResponseField>
+
+#### Example usage
+
+```go
+// From scanner/prune.go
+for _, folder := range folders {
+    result := pkg.AnalyzeFolder(folder.Path, folder.Size)
+    
+    if result.Score >= threshold {
+        // Safe to delete
+        fmt.Printf("🗑️  %s (score: %d) - %s\n", 
+            result.Path, result.Score, result.Reason)
+    }
+}
+```
+
+## Scoring Heuristics
+
+### Heuristic 1: Build Cache Detection
+
+**Score: 90** | **Reason: 🟢 Build cache (re-generable)**
+
+```go
+if isBuildCache(folderName) {
+    result.Score = 90
+    result.Reason = "🟢 Build cache (re-generable)"
+    return result
+}
+```
+
+Build output folders are always safe to delete:
+- `.next` (Next.js)
+- `.svelte-kit` (SvelteKit)
+- `dist` (build output)
+- `build` (build output)
+
+These can be regenerated instantly by rebuilding the project.
+
+### Heuristic 2: Orphan Detection
+
+**Score: 95** | **Reason: 🔴 No lockfile (orphan folder)**
+
+```go
+pm := DetectManager(projectDir)
+if pm == Unknown {
+    result.Score = 95
+    result.Reason = "🔴 No lockfile (orphan folder)"
+    return result
+}
+```
+
+If no package manager is detected, the dependency folder is orphaned:
+- Project was deleted but dependencies remain
+- Lock file was removed
+- Very safe to delete (highest score)
+
+### Heuristic 3: Lockfile Staleness (Very Old)
+
+**Score: 80** | **Reason: 🟡 Lockfile very stale (>90 days)**
+
+```go
+lockfileAge := getLockfileAge(projectDir, pm)
+if lockfileAge > 0 {
+    days := int(lockfileAge.Hours() / 24)
+    
+    if days > 90 {
+        result.Score = 80
+        result.Reason = "🟡 Lockfile very stale (" + formatDays(days) + ")"
+        return result
+    }
+}
+```
+
+Projects not touched in 3+ months are likely abandoned or inactive.
+
+### Heuristic 4: Lockfile Staleness (Old)
+
+**Score: 60** | **Reason: 🟡 Lockfile stale (>30 days)**
+
+```go
+if days > 30 {
+    result.Score = 60
+    result.Reason = "🟡 Lockfile stale (" + formatDays(days) + ")"
+    return result
+}
+```
+
+Projects inactive for 1-3 months may be worth cleaning.
+
+### Heuristic 5: Uncommitted Changes
+
+**Score: 15** | **Reason: ⚪ Uncommitted lockfile changes (active work)**
+
+```go
+if hasUncommittedLockfileChanges(projectDir) {
+    result.Score = 15
+    result.Reason = "⚪ Uncommitted lockfile changes (active work)"
+    return result
+}
+```
+
+If git shows uncommitted changes, the project is actively being worked on:
+- Very risky to delete
+- User might be testing new dependencies
+- Lowest score (except default)
+
+### Heuristic 6: Recent Activity
+
+**Score: 20** | **Reason: ⚪ Active project (recently modified)**
+
+```go
+if lockfileAge > 0 && lockfileAge.Hours()/24 < 7 {
+    result.Score = 20
+    result.Reason = "⚪ Active project (recently modified)"
+    return result
+}
+```
+
+Projects modified within the last week are active:
+- Very risky to delete
+- Likely in active development
+
+### Default Heuristic
+
+**Score: 45** | **Reason: 🟡 Dependency folder with lockfile**
+
+```go
+result.Score = 45
+result.Reason = "🟡 Dependency folder with lockfile"
+return result
+```
+
+For projects that don't match other criteria:
+- Has a lockfile (not orphaned)
+- Not particularly old or new
+- Moderate safety score
+
+## Helper Functions
+
+### isBuildCache
+
+Returns true for folders that are purely build output.
+
+```go
+func isBuildCache(name string) bool {
+    caches := []string{".next", ".svelte-kit", "dist", "build"}
+    for _, c := range caches {
+        if name == c {
+            return true
+        }
+    }
+    return false
+}
+```
+
+### getLockfileAge
+
+Returns the age of the lockfile for a project.
+
+```go
+func getLockfileAge(dir string, pm PackageManager) time.Duration
+```
+
+Checks modification time of the lockfile:
+
+```go
+lockfiles := getLockfiles(pm)
+for _, lf := range lockfiles {
+    path := filepath.Join(dir, lf)
+    info, err := os.Stat(path)
+    if err == nil {
+        return time.Since(info.ModTime())
+    }
+}
+return 0
+```
+
+Returns `0` if no lockfile found.
+
+### getLockfiles
+
+Returns the lockfile names for a given package manager.
+
+```go
+func getLockfiles(pm PackageManager) []string {
+    switch pm {
+    case Npm:   return []string{"package-lock.json"}
+    case Pnpm:  return []string{"pnpm-lock.yaml"}
+    case Yarn:  return []string{"yarn.lock"}
+    case Bun:   return []string{"bun.lockb", "bun.lock"}
+    case Cargo: return []string{"Cargo.lock"}
+    case Go:    return []string{"go.sum"}
+    // ... etc
+    }
+}
+```
+
+### hasUncommittedLockfileChanges
+
+Checks if git reports uncommitted changes in the project directory.
+
+```go
+func hasUncommittedLockfileChanges(dir string) bool
+```
+
+#### Step 1: Find .git directory
+
+```go
+gitDir := filepath.Join(dir, ".git")
+if _, err := os.Stat(gitDir); err != nil {
+    // Walk up to find .git
+    parent := dir
+    for i := 0; i < 5; i++ {
+        parent = filepath.Dir(parent)
+        if _, err := os.Stat(filepath.Join(parent, ".git")); err == nil {
+            break
+        }
+    }
+}
+```
+
+#### Step 2: Check git status
+
+```go
+cmd := exec.Command("git", "status", "--porcelain", dir)
+cmd.Dir = dir
+output, err := cmd.CombinedOutput()
+if err != nil {
+    return false
+}
+
+return len(output) > 0
+```
+
+If `git status --porcelain` returns any output, there are uncommitted changes.
+
+### formatDays
+
+Returns a human-readable string for a number of days.
+
+```go
+func formatDays(days int) string {
+    if days == 1 {
+        return "1 day"
+    }
+    if days < 30 {
+        return fmt.Sprintf("%d days", days)
+    }
+    months := days / 30
+    if months == 1 {
+        return "~1 month"
+    }
+    return fmt.Sprintf("~%d months", months)
+}
+```
+
+#### Examples
+
+- 1 day → `"1 day"`
+- 15 days → `"15 days"`
+- 45 days → `"~1 month"`
+- 120 days → `"~4 months"`
+
+## Usage in Prune Mode
+
+```go
+// From scanner/prune.go
+func PruneDir(root string, threshold int, dryRun bool) error {
+    // ... find and size folders
+    
+    results := analyzeAllFolders(folders)
+    
+    // Sort by score descending
+    sort.Slice(results, func(i, j int) bool {
+        return results[i].Score > results[j].Score
+    })
+    
+    // Print analysis table
+    for _, r := range results {
+        printPruneRow(r, threshold)
+        if r.Score >= threshold {
+            prunableCount++
+            prunableSize += r.Size
+        }
+    }
+    
+    // Delete high-scoring folders
+    if !dryRun {
+        for _, r := range results {
+            if r.Score >= threshold {
+                pkg.RemoveDirectory(r.Path)
+            }
+        }
+    }
+}
+```
+
+### Concurrent Analysis
+
+```go
+func analyzeAllFolders(folders []TargetFolder) []pkg.PruneResult {
+    var wg sync.WaitGroup
+    var mu sync.Mutex
+    results := make([]pkg.PruneResult, 0, len(folders))
+    sem := make(chan struct{}, 20)
+    
+    for _, f := range folders {
+        wg.Add(1)
+        go func(folder TargetFolder) {
+            defer wg.Done()
+            sem <- struct{}{}
+            defer func() { <-sem }()
+            
+            result := pkg.AnalyzeFolder(folder.Path, folder.Size)
+            
+            mu.Lock()
+            results = append(results, result)
+            mu.Unlock()
+        }(f)
+    }
+    
+    wg.Wait()
+    return results
+}
+```
+
+Analyzes up to 20 folders concurrently for performance.
+
+## Example Output
+
+```
+Folder Path                                           |       Size | Score | Reason
+──────────────────────────────────────────────────────────────────────────────────
+/projects/old-experiment/node_modules                 |   1.2 GB   |    95 | 🔴 No lockfile (orphan folder)
+/projects/legacy-app/.next                            |   450 MB   |    90 | 🟢 Build cache (re-generable)
+/projects/archived-site/node_modules                  |   800 MB   |    80 | 🟡 Lockfile very stale (~4 months)
+/projects/side-project/node_modules                   |   600 MB   |    60 | 🟡 Lockfile stale (~45 days)
+/projects/current-work/node_modules                   |   1.1 GB   |    20 | ⚪ Active project (recently modified)
+/projects/dev-branch/node_modules                     |   950 MB   |    15 | ⚪ Uncommitted lockfile changes (active work)
+```
+
+## Threshold Configuration
+
+Default threshold is typically 50-70:
+
+```bash
+pumu prune               # Default threshold (50)
+pumu prune --threshold 70  # Only delete very safe folders
+pumu prune --threshold 40  # More aggressive
+```
+
+## Best Practices
+
+### 1. Always Dry Run First
+
+```bash
+pumu prune --dry-run
+```
+
+Review scores before actually deleting.
+
+### 2. Adjust Threshold Based on Context
+
+- **Personal machine**: Lower threshold (40-50) for more cleanup
+- **Shared/work machine**: Higher threshold (70-80) for safety
+- **CI/build server**: Very high threshold (90+) to only clean build caches
+
+### 3. Combine with Git Awareness
+
+The uncommitted changes check prevents deleting dependencies from active work, even if the lockfile is old.
+
+### 4. Trust Build Caches
+
+Build output folders (score 90) are always safe to delete because they're deterministically regenerated.

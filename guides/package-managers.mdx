@@ -1,0 +1,317 @@
+---
+title: Package Manager Detection
+description: How Pumu detects and works with multiple package managers
+---
+
+## Detection Priority
+
+Pumu automatically detects the package manager in each project by scanning for specific lockfiles and manifest files. The detection happens in a **priority order** to handle projects with multiple package managers.
+
+### Priority Order
+
+When multiple lockfiles exist in the same directory, Pumu uses this priority order (from `detector.go:28-37`):
+
+1. **Bun** - `bun.lockb` or `bun.lock`
+2. **pnpm** - `pnpm-lock.yaml`
+3. **Yarn** - `yarn.lock`
+4. **npm** - `package-lock.json`
+5. **Deno** - `deno.json` or `deno.jsonc`
+6. **Cargo** - `Cargo.toml`
+7. **Go** - `go.mod`
+8. **Pip** - `requirements.txt` or `pyproject.toml`
+
+<Info>
+The priority order ensures that if you have both `package-lock.json` and `pnpm-lock.yaml` in the same directory, Pumu will recognize it as a pnpm project.
+</Info>
+
+## Supported Package Managers
+
+### JavaScript/TypeScript Ecosystems
+
+<Tabs>
+  <Tab title="npm">
+    **Detection Files:**
+    - `package-lock.json`
+
+    **Dependency Folder:**
+    - `node_modules/`
+
+    **Typical Size:**
+    - 50-500+ MB
+
+    **Install Command:**
+    ```bash
+    npm install
+    ```
+  </Tab>
+
+  <Tab title="pnpm">
+    **Detection Files:**
+    - `pnpm-lock.yaml`
+
+    **Dependency Folder:**
+    - `node_modules/`
+
+    **Typical Size:**
+    - 50-500+ MB (typically smaller due to symlinks)
+
+    **Install Command:**
+    ```bash
+    pnpm install
+    ```
+  </Tab>
+
+  <Tab title="Yarn">
+    **Detection Files:**
+    - `yarn.lock`
+
+    **Dependency Folder:**
+    - `node_modules/`
+
+    **Typical Size:**
+    - 50-500+ MB
+
+    **Install Command:**
+    ```bash
+    yarn install
+    ```
+  </Tab>
+
+  <Tab title="Bun">
+    **Detection Files:**
+    - `bun.lockb`
+    - `bun.lock`
+
+    **Dependency Folder:**
+    - `node_modules/`
+
+    **Typical Size:**
+    - 50-500+ MB
+
+    **Install Command:**
+    ```bash
+    bun install
+    ```
+  </Tab>
+
+  <Tab title="Deno">
+    **Detection Files:**
+    - `deno.json`
+    - `deno.jsonc`
+
+    **Dependency Folder:**
+    - `node_modules/` (for npm compatibility)
+
+    **Typical Size:**
+    - 50-300+ MB
+
+    **Install Command:**
+    ```bash
+    deno install
+    ```
+  </Tab>
+</Tabs>
+
+### Other Languages
+
+<Tabs>
+  <Tab title="Rust (Cargo)">
+    **Detection Files:**
+    - `Cargo.toml`
+
+    **Dependency Folder:**
+    - `target/`
+
+    **Typical Size:**
+    - 100-2000+ MB (build artifacts and dependencies)
+
+    **Build Command:**
+    ```bash
+    cargo build
+    ```
+  </Tab>
+
+  <Tab title="Go">
+    **Detection Files:**
+    - `go.mod`
+
+    **Dependency Folder:**
+    - None (Go uses a global cache)
+
+    **Typical Size:**
+    - N/A
+
+    **Install Command:**
+    ```bash
+    go mod download
+    ```
+  </Tab>
+
+  <Tab title="Python (Pip)">
+    **Detection Files:**
+    - `requirements.txt`
+    - `pyproject.toml`
+
+    **Dependency Folder:**
+    - `.venv/`
+
+    **Typical Size:**
+    - 50-300+ MB
+
+    **Install Command:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+  </Tab>
+</Tabs>
+
+## Dependency Folders by Package Manager
+
+Pumu tracks these dependency and build folders (from `scanner.go:34-37`):
+
+| Folder | Package Manager(s) | Typical Size | Deletable |
+|--------|-------------------|--------------|------------|
+| `node_modules` | npm, pnpm, yarn, bun, deno | 50-500+ MB | ✅ |
+| `target` | cargo | 100-2000+ MB | ✅ |
+| `.venv` | pip | 50-300+ MB | ✅ |
+| `.next` | Next.js | 100-500+ MB | ✅ |
+| `.svelte-kit` | SvelteKit | 50-200+ MB | ✅ |
+| `dist` | Various build tools | 10-100+ MB | ✅ |
+| `build` | Various build tools | 10-100+ MB | ✅ |
+
+<Warning>
+These folders are considered safe to delete because they can be regenerated from lockfiles and source code. However, always ensure your lockfiles are committed to version control.
+</Warning>
+
+## Multi-Package Manager Projects
+
+### Monorepos
+
+In monorepos, different packages may use different package managers. Pumu handles this by:
+
+1. **Per-directory detection** - Each subdirectory is scanned independently
+2. **Separate reinstallation** - Each project can be reinstalled with its own package manager
+3. **Interactive selection** - You choose which projects to reinstall
+
+**Example monorepo structure:**
+
+```
+monorepo/
+├── frontend/
+│   ├── package-lock.json  → npm
+│   └── node_modules/      → deletable
+├── backend/
+│   ├── Cargo.toml         → cargo
+│   └── target/            → deletable
+└── scripts/
+    ├── requirements.txt   → pip
+    └── .venv/             → deletable
+```
+
+When you run `pumu sweep --reinstall`, you'll see:
+
+```
+📦 Select projects to reinstall:
+▸ [✓] ./frontend (npm)
+  [✓] ./backend (cargo)
+  [✓] ./scripts (pip)
+```
+
+### Mixed Lockfiles
+
+If a single directory contains multiple lockfiles (e.g., both `package-lock.json` and `yarn.lock`), Pumu uses the **priority order** to select one:
+
+<Accordion title="What happens with npm + pnpm lockfiles?">
+  If you have both `package-lock.json` and `pnpm-lock.yaml`:
+  
+  1. Pumu detects **pnpm** (higher priority)
+  2. Runs `pnpm install` during reinstall
+  3. The `package-lock.json` is ignored
+
+  **Best practice:** Remove unused lockfiles to avoid confusion.
+</Accordion>
+
+<Accordion title="What about framework build folders?">
+  Folders like `.next` and `.svelte-kit` are **always detected** regardless of package manager:
+  
+  - They're recognized by name, not by lockfiles
+  - They're safe to delete (regenerated on build)
+  - They don't affect package manager detection
+</Accordion>
+
+## Detection Algorithm
+
+The detection logic (from `detector.go:27-48`) works as follows:
+
+```go
+func DetectManager(dir string) PackageManager {
+    managers := map[PackageManager][]string{
+        Bun:   {"bun.lockb", "bun.lock"},
+        Pnpm:  {"pnpm-lock.yaml"},
+        Yarn:  {"yarn.lock"},
+        Npm:   {"package-lock.json"},
+        Deno:  {"deno.json", "deno.jsonc"},
+        Cargo: {"Cargo.toml"},
+        Go:    {"go.mod"},
+        Pip:   {"requirements.txt", "pyproject.toml"},
+    }
+
+    for mgr, files := range managers {
+        for _, f := range files {
+            if fileExists(filepath.Join(dir, f)) {
+                return mgr
+            }
+        }
+    }
+
+    return Unknown
+}
+```
+
+<Info>
+The iteration order in Go maps is **deterministic** in this implementation because the priority is enforced by the order of keys in the `managers` map definition.
+</Info>
+
+## Examples
+
+### Detect Package Manager in Current Directory
+
+```bash
+pumu
+```
+
+**Output:**
+```
+🔍 Detected package manager: pnpm
+🗑️  Removing node_modules...
+✅ Removed in 1.23s
+📦 Running pnpm install...
+```
+
+### Scan Multi-Language Project
+
+```bash
+cd ~/my-fullstack-app
+pumu sweep --reinstall
+```
+
+**Output:**
+```
+🔎 Scanning for heavy dependency folders in '.'...
+⏱️  Found 3 folders. Calculating sizes concurrently...
+
+🗑️  Select folders to delete:
+▸ [✓] ./frontend/node_modules       487.50 MB
+  [✓] ./backend/target                1.23 GB
+  [✓] ./ml-service/.venv              156.78 MB
+
+📦 Select projects to reinstall:
+▸ [✓] ./frontend (pnpm)
+  [✓] ./backend (cargo)
+  [✓] ./ml-service (pip)
+```
+
+## See Also
+
+- [Performance Guide](/guides/performance) - Learn about concurrent scanning
+- [Safety Features](/guides/safety) - Understand what's protected

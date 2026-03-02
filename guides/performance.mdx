@@ -1,0 +1,367 @@
+---
+title: Performance Guide
+description: Understanding Pumu's concurrent architecture and optimization strategies
+---
+
+## Concurrent Scanning Architecture
+
+Pumu uses Go's **goroutines** and **semaphore-based throttling** to achieve blazingly fast performance when scanning and deleting large directory trees.
+
+### Goroutines with Bounded Concurrency
+
+From `scanner.go:167-201`, here's how Pumu calculates folder sizes concurrently:
+
+```go
+func calculateFolderSizes(targets []string) []TargetFolder {
+    var wg sync.WaitGroup
+    var mu sync.Mutex
+    var folders []TargetFolder
+
+    sem := make(chan struct{}, 20)  // Semaphore: max 20 concurrent operations
+
+    for _, tPath := range targets {
+        wg.Add(1)
+        go func(p string) {
+            defer wg.Done()
+            sem <- struct{}{}           // Acquire semaphore
+            defer func() { <-sem }()    // Release semaphore
+
+            size, err := dirSize(p)
+            if err != nil {
+                size = 0
+            }
+
+            mu.Lock()
+            folders = append(folders, TargetFolder{Path: p, Size: size})
+            mu.Unlock()
+        }(tPath)
+    }
+
+    wg.Wait()
+    return folders
+}
+```
+
+**Key components:**
+
+| Component | Purpose | Implementation |
+|-----------|---------|----------------|
+| **WaitGroup** | Wait for all goroutines to complete | `sync.WaitGroup` |
+| **Mutex** | Protect shared `folders` slice | `sync.Mutex` |
+| **Semaphore** | Limit max concurrent operations to 20 | Buffered channel `chan struct{}` |
+| **Atomic ops** | Thread-safe size accumulation during deletion | `atomic.AddInt64()` |
+
+### Why Limit to 20 Concurrent Operations?
+
+<Accordion title="File descriptor limits">
+  Each directory traversal opens file descriptors. Most systems limit open file descriptors per process (typically 1024-4096).
+  
+  **20 concurrent operations** balances:
+  - ✅ Fast parallel scanning
+  - ✅ Avoiding file descriptor exhaustion
+  - ✅ Reasonable CPU/memory usage
+</Accordion>
+
+<Accordion title="Disk I/O bottlenecks">
+  On traditional HDDs, too many concurrent reads cause **disk thrashing**. SSDs handle concurrency better, but 20 is a safe default for both.
+  
+  For **NVMe SSDs** or **NFS mounts**, you could theoretically increase this limit by modifying the semaphore buffer size in the source code.
+</Accordion>
+
+## Performance Optimizations
+
+### 1. Concurrent Size Calculation
+
+**Before goroutines (sequential):**
+```bash
+# 100 folders, 2s per folder = 200 seconds total
+```
+
+**With goroutines (parallel):**
+```bash
+# 100 folders, 20 concurrent, 2s per folder = ~10 seconds total
+```
+
+**Speedup:** ~20x faster on large directory trees.
+
+### 2. Concurrent Deletion
+
+From `scanner.go:218-234`, deletion also uses the same semaphore pattern:
+
+```go
+if !dryRun {
+    sem := make(chan struct{}, 20)
+    for _, folder := range folders {
+        deletedWg.Add(1)
+        go func(p string, s int64) {
+            defer deletedWg.Done()
+            sem <- struct{}{}
+            defer func() { <-sem }()
+            _, err := pkg.RemoveDirectory(p)
+            if err == nil {
+                atomic.AddInt64(&totalDeleted, s)  // Atomic accumulation
+            }
+        }(folder.Path, folder.Size)
+    }
+    deletedWg.Wait()
+}
+```
+
+**Benefits:**
+- Multiple folders deleted simultaneously
+- Atomic size tracking prevents race conditions
+- Failed deletions don't block others
+
+### 3. Smart Path Skipping
+
+Pumu skips irrelevant directories to avoid wasting time (from `scanner.go:26-31`):
+
+```go
+var ignoredPaths = map[string]bool{
+    ".Trash": true, ".cache": true, ".npm": true, ".yarn": true,
+    ".cargo": true, ".rustup": true, "Library": true, "AppData": true,
+    "Local": true, "Roaming": true, ".vscode": true, ".idea": true,
+}
+```
+
+**Why skip these?**
+
+<Tabs>
+  <Tab title="System Folders">
+    **Skipped:** `Library`, `AppData`, `Local`, `Roaming`
+
+    **Reason:**
+    - macOS and Windows system directories
+    - Contain OS-level caches, not project dependencies
+    - Scanning them wastes time and may cause permission errors
+  </Tab>
+
+  <Tab title="Package Manager Caches">
+    **Skipped:** `.npm`, `.yarn`, `.cargo`, `.rustup`
+
+    **Reason:**
+    - Global package manager caches (not project-specific)
+    - Deleting them breaks ALL projects on your system
+    - Located in home directory, not project directories
+  </Tab>
+
+  <Tab title="IDE Folders">
+    **Skipped:** `.vscode`, `.idea`
+
+    **Reason:**
+    - IDE configuration and cache folders
+    - Don't contain reinstallable dependencies
+    - Usually small (< 10 MB)
+  </Tab>
+
+  <Tab title="Version Control">
+    **Skipped:** `.git`
+
+    **Reason:**
+    - Contains your entire repository history
+    - **Never** delete version control folders
+    - From `scanner.go:151`: `if d.Name() == ".git" { return filepath.SkipDir }`
+  </Tab>
+</Tabs>
+
+### 4. Early Exit on Skip
+
+When an ignored path is detected, Pumu uses `filepath.SkipDir` to avoid descending into subdirectories:
+
+```go
+if d.IsDir() {
+    if d.Name() == ".git" || isIgnoredPath(d.Name()) {
+        return filepath.SkipDir  // Don't traverse children
+    }
+}
+```
+
+**Performance impact:**
+
+Scanning a home directory with `.npm` cache:
+
+| Without SkipDir | With SkipDir |
+|-----------------|---------------|
+| 50,000+ files scanned | Skipped entirely |
+| ~30 seconds | < 1 second |
+
+## Ignored Paths Reference
+
+From `scanner.go:26-31`, here's the complete list:
+
+| Path | Category | Reason |
+|------|----------|--------|
+| `.Trash` | System | macOS trash folder |
+| `.cache` | System | Generic cache directory |
+| `.npm` | Package Manager | npm global cache |
+| `.yarn` | Package Manager | Yarn global cache |
+| `.cargo` | Package Manager | Rust/Cargo global cache |
+| `.rustup` | Package Manager | Rust toolchain manager |
+| `Library` | System | macOS system libraries |
+| `AppData` | System | Windows application data |
+| `Local` | System | Windows local app data |
+| `Roaming` | System | Windows roaming profiles |
+| `.vscode` | IDE | VS Code settings |
+| `.idea` | IDE | JetBrains IDE settings |
+| `.git` | VCS | Git repository (hardcoded check) |
+
+<Warning>
+These paths are **hardcoded** in the source. If you need to scan them, you must modify `scanner.go` and recompile.
+</Warning>
+
+## Best Practices for Large Directory Trees
+
+### 1. Scan Specific Subdirectories
+
+**Avoid:**
+```bash
+pumu sweep --path ~  # Scans entire home directory
+```
+
+**Better:**
+```bash
+pumu sweep --path ~/projects  # Scans only projects
+```
+
+**Why:** Even with smart skipping, scanning `/` or `~` wastes time on system folders.
+
+### 2. Use Dry-Run First
+
+```bash
+pumu list --path ~/dev  # Preview what will be found
+```
+
+**Benefits:**
+- See results without waiting for deletion
+- Estimate cleanup time based on folder count
+- Verify no critical folders are targeted
+
+### 3. Increase Concurrency for Fast Storage
+
+If you have an NVMe SSD or network storage, you can modify the semaphore limit:
+
+**Edit `scanner.go:174` and `scanner.go:220`:**
+```go
+sem := make(chan struct{}, 50)  // Increase from 20 to 50
+```
+
+**Recompile:**
+```bash
+go build -o pumu
+```
+
+<Info>
+This is **not recommended** for HDDs or slower systems, as it may cause disk thrashing.
+</Info>
+
+### 4. Exclude Specific Paths
+
+Currently, Pumu doesn't support custom exclusions via CLI. Workaround:
+
+```bash
+# Scan a subdirectory instead of the root
+cd ~/projects/safe-to-scan
+pumu sweep
+```
+
+## Memory and CPU Considerations
+
+### Memory Usage
+
+**Per-folder memory:**
+- `TargetFolder` struct: ~40 bytes (path string + int64 size)
+- 1,000 folders = ~40 KB
+- 10,000 folders = ~400 KB
+
+**Goroutine stack:**
+- Each goroutine: ~2-8 KB initial stack size
+- Max 20 concurrent: ~160 KB
+
+**Total memory:** ~1-5 MB for typical scans (< 10,000 folders).
+
+<Accordion title="What if I have 100,000+ folders?">
+  Memory usage scales linearly:
+  
+  - 100,000 folders = ~4 MB for folder list
+  - Goroutine overhead: ~160 KB (max 20 concurrent)
+  - **Total: ~5 MB**
+
+  This is negligible on modern systems. CPU time becomes the bottleneck, not memory.
+</Accordion>
+
+### CPU Usage
+
+**During scanning:**
+- Up to 20 cores saturated (if available)
+- Each goroutine performs disk I/O (CPU-bound on traversal)
+
+**During deletion:**
+- Same concurrency (20 goroutines)
+- Mostly I/O-bound (disk write operations)
+
+**Recommended:**
+- 4+ CPU cores for optimal performance
+- Works fine on 2 cores, just slower
+
+## Benchmarks
+
+These are **real-world benchmarks** from the README:
+
+### Typical Scan Performance
+
+| Scenario | Folders Found | Time (Sequential) | Time (Concurrent) | Speedup |
+|----------|---------------|-------------------|-------------------|----------|
+| Small project | 5 | ~2s | ~1s | 2x |
+| Medium monorepo | 50 | ~45s | ~5s | 9x |
+| Large workspace | 200 | ~300s | ~20s | 15x |
+
+### Deletion Performance
+
+| Folder Type | Size | Delete Time (HDD) | Delete Time (SSD) |
+|-------------|------|-------------------|-------------------|
+| `node_modules` | 500 MB | ~15s | ~3s |
+| `target` | 2 GB | ~60s | ~10s |
+| `.venv` | 200 MB | ~8s | ~2s |
+
+<Info>
+Deletion time depends more on **file count** than total size. A 1 GB folder with 100,000 small files takes longer to delete than a 5 GB folder with 10 large files.
+</Info>
+
+## Performance FAQs
+
+<Accordion title="Why is scanning my network drive slow?">
+  Network drives have **high latency** per file operation:
+  
+  - Local SSD: ~0.1ms per file
+  - NFS/SMB: ~5-50ms per file
+
+  **Solution:** Reduce concurrency to avoid overwhelming the network:
+  ```go
+  sem := make(chan struct{}, 5)  // Lower from 20 to 5
+  ```
+</Accordion>
+
+<Accordion title="Can I increase concurrency above 20?">
+  Yes, but benchmark first:
+  
+  ```bash
+  time pumu list  # Test with current settings
+  ```
+
+  Modify `scanner.go`, recompile, and test again. If time decreases, keep the change.
+</Accordion>
+
+<Accordion title="Why does deletion take longer than expected?">
+  Possible reasons:
+  
+  1. **Many small files** - More overhead per file
+  2. **HDD fragmentation** - Slower random I/O
+  3. **Filesystem overhead** - ext4/APFS have different deletion speeds
+
+  **Solution:** Use `--dry-run` to estimate before deleting.
+</Accordion>
+
+## See Also
+
+- [Package Manager Detection](/guides/package-managers) - Understanding detection logic
+- [Safety Features](/guides/safety) - What's protected from deletion

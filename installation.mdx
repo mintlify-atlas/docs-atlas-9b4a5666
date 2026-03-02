@@ -1,0 +1,237 @@
+---
+title: Installation
+description: Get Pumu installed and ready to use in under a minute
+---
+
+## System requirements
+
+Before installing Pumu, make sure you have:
+
+- **Operating system**: macOS, Linux, or Windows (WSL)
+- **Go 1.24.0+** (only required if building from source)
+- **Package managers**: Installed and available in your PATH if you plan to use `--reinstall` or `repair` commands
+  - Node.js: npm, yarn, pnpm, or bun
+  - Rust: cargo
+  - Python: pip
+  - Go: go
+  - Deno: deno
+
+<Note>
+  You don't need all package managers installed. Pumu only uses the ones relevant to your projects.
+</Note>
+
+## Choose your installation method
+
+<Steps>
+  <Step title="Install Pumu">
+    Choose the installation method that works best for you:
+
+    <CodeGroup>
+      ```bash Homebrew (Recommended)
+      brew install carlosedujs/pumu/pumu
+      ```
+
+      ```bash Go Install
+      go install github.com/carlosedujs/pumu@latest
+      ```
+
+      ```bash From Source
+      git clone https://github.com/carlosedujs/pumu.git
+      cd pumu
+      go build -o pumu
+      sudo mv pumu /usr/local/bin/
+      ```
+    </CodeGroup>
+
+    <Note>
+      **Homebrew** is the recommended method for macOS users. It handles PATH configuration automatically.
+    </Note>
+
+    <Warning>
+      When using **Go install**, ensure your `$GOPATH/bin` or `$HOME/go/bin` is in your PATH:
+      
+      ```bash
+      export PATH="$HOME/go/bin:$PATH"
+      ```
+    </Warning>
+  </Step>
+
+  <Step title="Verify installation">
+    Confirm Pumu is installed correctly by checking the version:
+
+    ```bash
+    pumu --version
+    ```
+
+    You should see output like:
+
+    ```
+    pumu version v1.2.1-rc.1
+    ```
+
+    If you get a "command not found" error, check that Pumu is in your PATH.
+  </Step>
+
+  <Step title="Test basic functionality">
+    Run a quick test to ensure Pumu is working:
+
+    ```bash
+    pumu list --path ~
+    ```
+
+    This will scan your home directory for heavy dependency folders. You should see output showing any found folders with their sizes.
+
+    <Note>
+      Don't worry, `list` command is a dry-run and won't delete anything.
+    </Note>
+  </Step>
+</Steps>
+
+## Installation methods explained
+
+### Homebrew (macOS/Linux)
+
+Homebrew is the easiest method for macOS and Linux users. It:
+
+- Automatically adds Pumu to your PATH
+- Handles updates via `brew upgrade`
+- Manages dependencies
+
+```bash
+brew install carlosedujs/pumu/pumu
+```
+
+### Go install
+
+Ideal for Go developers who already have Go installed:
+
+- Builds from source automatically
+- Always gets the latest version
+- Requires Go 1.24.0 or later
+
+```bash
+go install github.com/carlosedujs/pumu@latest
+```
+
+<Warning>
+  Make sure `$GOPATH/bin` (or `$HOME/go/bin`) is in your PATH. Add this to your `.bashrc`, `.zshrc`, or equivalent:
+  
+  ```bash
+  export PATH="$HOME/go/bin:$PATH"
+  ```
+</Warning>
+
+### From source
+
+Best for contributors or users who want full control:
+
+- Clone the repository
+- Build with custom flags if needed
+- Useful for development
+
+```bash
+git clone https://github.com/carlosedujs/pumu.git
+cd pumu
+go build -o pumu
+sudo mv pumu /usr/local/bin/
+```
+
+<Note>
+  The `sudo mv` command places Pumu in a system directory. You can skip `sudo` and place it in `~/bin` or another directory in your PATH if you prefer.
+</Note>
+
+## Shell completion (optional)
+
+Pumu supports shell completion for bash, zsh, fish, and PowerShell.
+
+<CodeGroup>
+  ```bash Bash
+  pumu completion bash > /usr/local/etc/bash_completion.d/pumu
+  ```
+
+  ```zsh Zsh
+  pumu completion zsh > "${fpath[1]}/_pumu"
+  ```
+
+  ```fish Fish
+  pumu completion fish > ~/.config/fish/completions/pumu.fish
+  ```
+
+  ```powershell PowerShell
+  pumu completion powershell > pumu.ps1
+  ```
+</CodeGroup>
+
+Restart your shell or source your config file to enable completions.
+
+## Troubleshooting
+
+### Command not found
+
+If you see `pumu: command not found` after installation:
+
+1. **Check PATH**: Ensure the installation directory is in your PATH
+   ```bash
+   echo $PATH
+   ```
+
+2. **For Go install**: Verify `$GOPATH/bin` or `$HOME/go/bin` is in PATH
+   ```bash
+   export PATH="$HOME/go/bin:$PATH"
+   ```
+
+3. **For manual install**: Verify Pumu is in `/usr/local/bin` or another PATH directory
+   ```bash
+   which pumu
+   ```
+
+### Permission denied
+
+If you get permission errors:
+
+- **On Linux/macOS**: Ensure the binary is executable
+  ```bash
+  chmod +x /usr/local/bin/pumu
+  ```
+
+- **For system directories**: Use `sudo` when moving to `/usr/local/bin`
+  ```bash
+  sudo mv pumu /usr/local/bin/
+  ```
+
+### Go version mismatch
+
+Pumu requires Go 1.24.0 or later. Check your Go version:
+
+```bash
+go version
+```
+
+If you need to upgrade, visit [go.dev/dl](https://go.dev/dl/).
+
+## Updating Pumu
+
+<CodeGroup>
+  ```bash Homebrew
+  brew upgrade pumu
+  ```
+
+  ```bash Go Install
+  go install github.com/carlosedujs/pumu@latest
+  ```
+
+  ```bash From Source
+  cd pumu
+  git pull origin main
+  go build -o pumu
+  sudo mv pumu /usr/local/bin/
+  ```
+</CodeGroup>
+
+## Next steps
+
+Now that Pumu is installed, let's put it to work:
+
+<Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+  Learn how to use Pumu with real-world examples and go from installation to your first cleanup in 5 minutes
+</Card>

@@ -1,0 +1,262 @@
+---
+title: "repair"
+description: "Detect and fix corrupted or broken dependencies automatically"
+---
+
+## Overview
+
+The `repair` command scans for projects with corrupted or broken dependencies and automatically fixes them by removing and reinstalling. This is safer than `sweep` because it only touches projects that are actually broken.
+
+Use this command when:
+- Dependencies are corrupted or incomplete
+- Package installations failed midway
+- You suspect missing packages causing runtime errors
+- You want to verify and fix dependency health across multiple projects
+
+## Usage
+
+```bash
+pumu repair [flags]
+```
+
+## Flags
+
+<ParamField path="-p, --path" type="string" default=".">
+  Root path to scan. Defaults to the current directory. Scans recursively through all subdirectories.
+</ParamField>
+
+<ParamField path="--verbose" type="boolean" default="false">
+  Show details for all projects, including healthy ones. By default, only broken projects are shown.
+</ParamField>
+
+<ParamField path="-h, --help" type="boolean" default="false">
+  Display help information for the repair command.
+</ParamField>
+
+## Examples
+
+### Repair Current Directory
+
+Scan and fix broken dependencies:
+
+```bash
+pumu repair
+```
+
+**Example Output:**
+
+```
+🔧 Scanning for projects with broken dependencies in '.'...
+⏱️  Found 3 projects. Checking health...
+
+📁 ./webapp (npm)
+   ❌ Missing: react, react-dom
+   🗑️  Removing node_modules...
+   📦 Reinstalling...
+   ✅ Repaired!
+
+📁 ./api (pnpm)
+   ✅ Healthy, skipping.
+
+📁 ./rust-cli (cargo)
+   ❌ Compilation errors detected
+   🗑️  Removing target...
+   📦 Rebuilding...
+   ✅ Repaired!
+
+-----
+🔧 Repair complete! Fixed 2/3 projects.
+```
+
+### Repair with Verbose Output
+
+Show details for healthy projects too:
+
+```bash
+pumu repair --verbose
+```
+
+**Example Output:**
+
+```
+🔧 Scanning for projects with broken dependencies in '.'...
+⏱️  Found 5 projects. Checking health...
+
+📁 ./webapp (npm)
+   ❌ Missing: react, react-dom, lodash
+   🗑️  Removing node_modules...
+   📦 Reinstalling...
+   ✅ Repaired!
+
+📁 ./api (pnpm)
+   ✅ Healthy: All dependencies installed correctly
+   ✅ Dependency tree verified
+
+📁 ./old-project (npm)
+   ❌ Corrupted package: express (invalid checksum)
+   🗑️  Removing node_modules...
+   📦 Reinstalling...
+   ✅ Repaired!
+
+📁 ./rust-cli (cargo)
+   ✅ Healthy: cargo check passed
+
+📁 ./python-app (pip)
+   ✅ Healthy: pip check passed
+
+-----
+🔧 Repair complete! Fixed 2/5 projects.
+```
+
+### Repair Specific Directory
+
+Scan a specific path:
+
+```bash
+pumu repair --path ~/projects
+```
+
+### Check All Projects Verbosely
+
+Audit all projects and show their health status:
+
+```bash
+pumu repair -p ~/dev --verbose
+```
+
+## Health Check Methods
+
+Pumu uses different health check strategies per package manager:
+
+| Ecosystem | Health Check Method | What It Detects |
+|-----------|---------------------|------------------|
+| **npm** | `npm ls --json` | Missing packages, version mismatches, corrupted installations |
+| **pnpm** | `pnpm ls --json` | Missing packages, integrity issues, broken symlinks |
+| **yarn** | `yarn check --verify-tree` | Dependency tree corruption, checksum mismatches |
+| **bun** | `bun install --dry-run` | Missing packages, version conflicts |
+| **cargo** | `cargo check` | Compilation errors, missing dependencies |
+| **go** | `go mod verify` | Module integrity, checksum verification |
+| **pip** | `pip check` | Broken dependencies, incompatible versions |
+
+## How Repair Works
+
+1. **Scans recursively** - Finds all project directories by detecting package manager files
+2. **Runs health checks** - Uses package manager-specific commands to detect issues
+3. **Identifies broken projects** - Determines which projects need fixing
+4. **Removes corrupt folders** - Deletes the dependency folder (node_modules, target, etc.)
+5. **Reinstalls fresh** - Runs the package manager's install command
+6. **Verifies repair** - Checks if the project is now healthy
+7. **Reports results** - Shows which projects were fixed and which were already healthy
+
+## Common Use Cases
+
+### Fix Runtime Errors
+
+When you get "module not found" errors:
+
+```bash
+cd ~/projects/webapp
+pumu repair
+```
+
+### Audit All Projects
+
+Check health across all projects:
+
+```bash
+pumu repair --path ~/projects --verbose
+```
+
+### Fix After Failed Installation
+
+When `npm install` or similar commands fail:
+
+```bash
+pumu repair
+npm run dev  # Now it should work
+```
+
+### Verify Environment After Updates
+
+After updating Node.js, Rust, or other tools:
+
+```bash
+pumu repair -p ~/dev
+```
+
+### Batch Repair Multiple Projects
+
+Fix all broken projects in your workspace:
+
+```bash
+cd ~/workspace
+pumu repair
+```
+
+### Pre-deployment Check
+
+Verify all dependencies before deploying:
+
+```bash
+pumu repair --verbose
+# If all healthy, proceed with deployment
+```
+
+## Repair vs. Sweep
+
+| Feature | `repair` | `sweep` |
+|---------|----------|----------|
+| **Purpose** | Fix broken dependencies | Free up disk space |
+| **Detection** | Health checks | Size calculation |
+| **Action** | Only repairs broken projects | Deletes selected folders |
+| **Safety** | Very safe - only touches broken projects | Requires explicit selection |
+| **Speed** | Slower (runs health checks) | Faster (just calculates sizes) |
+| **Use case** | Fix errors | Clean up space |
+
+<Tip>
+  Use `repair` when things are broken. Use `sweep` when you need disk space.
+</Tip>
+
+## Performance Considerations
+
+- **Health checks can be slow** - Package manager verification commands (especially `cargo check` and `npm ls`) can take time on large projects
+- **Concurrent execution** - Multiple health checks run in parallel for speed
+- **Smart caching** - Some package managers cache verification results
+- **Graceful failures** - If a health check times out, the project is skipped
+
+<Note>
+  The `--verbose` flag is useful for auditing, but can produce a lot of output on large workspaces. Use it selectively.
+</Note>
+
+## Output Interpretation
+
+### Symbols and Colors
+
+- ✅ **Green checkmark** - Project is healthy or was successfully repaired
+- ❌ **Red X** - Project has broken dependencies
+- 📁 **Folder icon** - Project path and detected package manager
+- 🗑️ **Trash icon** - Removing corrupted dependency folder
+- 📦 **Package icon** - Reinstalling dependencies
+
+### Exit Codes
+
+- `0` - All projects healthy or successfully repaired
+- `1` - One or more projects could not be repaired
+
+## Limitations
+
+<Warning>
+  Repair requires the package manager to be installed. If `npm`, `cargo`, `pip`, etc. are not available, repair will skip those projects.
+</Warning>
+
+- **Requires package managers** - The tool must be able to run `npm`, `cargo`, etc.
+- **Network dependent** - Reinstalling requires internet access
+- **Time consuming** - Health checks and reinstalls can take minutes on large projects
+- **Not all errors detected** - Some subtle corruption may not be caught by standard health checks
+
+## Related Commands
+
+- [Default mode](/commands/default-mode) - Refresh a single project (similar to repair but for one project)
+- [`sweep`](/commands/sweep) - Delete dependency folders to free space
+- [`list`](/commands/list) - View all dependency folders without action
+- [`prune`](/commands/prune) - Smart cleanup based on staleness

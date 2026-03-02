@@ -1,80 +1,270 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get started with Pumu in under 5 minutes. Learn how to find, clean, and manage heavy dependency folders across your projects.
 ---
 
-## Get started in three steps
+Get up and running with Pumu in under 5 minutes. You'll learn how to scan for heavy dependency folders, perform your first cleanup, and understand the interactive selection workflow.
 
-Get your documentation site running locally and make your first customization.
+## Installation
 
-### Step 1: Set up your local environment
+Choose your preferred installation method:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<CodeGroup>
 
-### Step 2: Deploy your changes
+```bash Homebrew (Recommended)
+brew install carlosedujs/pumu/pumu
+```
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+```bash Go Install
+go install github.com/carlosedujs/pumu@latest
+```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+```bash From Source
+git clone https://github.com/carlosedujs/pumu.git
+cd pumu
+go build -o pumu
+sudo mv pumu /usr/local/bin/
+```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+</CodeGroup>
 
-### Step 3: Go live
+Verify the installation:
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+```bash
+pumu --version
+```
 
-## Next steps
+```
+pumu version v1.2.1-rc.1
+```
 
-Now that you have your docs running, explore these key features:
+## Your first cleanup
+
+<Steps>
+
+<Step title="List heavy folders in your workspace">
+
+Start by scanning your projects directory to see what's taking up space. This is a dry-run that won't delete anything:
+
+```bash
+cd ~/projects
+pumu list
+```
+
+You'll see a color-coded table showing all dependency folders:
+
+```
+🔎 Listing heavy dependency folders in '.'...
+⏱️  Found 3 folders. Calculating sizes concurrently...
+
+Folder Path                                                                       | Size
+/home/user/projects/webapp/node_modules                                           | 1.23 GB 🚨
+/home/user/projects/rust-app/target                                               | 487.50 MB ⚠️
+/home/user/projects/api/.venv                                                     | 89.32 MB
+----------------------------------------------------------------------------------------------------
+📋 List complete! Found 3 heavy folders.
+💾 Total space that can be freed: 1.79 GB
+```
+
+<Note>
+**Color coding helps you prioritize:**
+- Red (🚨) = Folders over 1 GB (critical space users)
+- Yellow (⚠️) = Folders between 100 MB - 1 GB (moderate)
+- Green = Folders under 100 MB (minor)
+</Note>
+
+</Step>
+
+<Step title="Sweep with interactive selection">
+
+Now let's clean up those folders. By default, Pumu shows an interactive multi-select so you can choose exactly what to delete:
+
+```bash
+pumu sweep
+```
+
+You'll see an interactive TUI selector:
+
+```
+🔎 Scanning for heavy dependency folders in '.'...
+⏱️  Found 3 folders. Calculating sizes concurrently...
+
+🗑️  Select folders to delete:
+▸ [✓] /home/user/projects/webapp/node_modules       1.23 GB
+  [✓] /home/user/projects/rust-app/target            487.50 MB
+  [ ] /home/user/projects/api/.venv                  89.32 MB
+
+  2/3 selected
+  press ? for help
+```
+
+**Navigation shortcuts:**
+- `↑/↓` or `k/j` - Move cursor up/down
+- `space` - Toggle item
+- `a` - Select all
+- `n` - Deselect all
+- `i` - Invert selection
+- `enter` - Confirm and delete
+- `q` or `esc` - Cancel
+
+Select the folders you want to delete and press `enter` to confirm.
+
+</Step>
+
+<Step title="Sweep with reinstall">
+
+Want to clean up and automatically reinstall dependencies? Add the `--reinstall` flag:
+
+```bash
+pumu sweep --reinstall
+```
+
+This will:
+1. Show the interactive selector for deletion
+2. Delete selected folders
+3. Show another selector asking which projects to reinstall
+4. Automatically detect package managers and run the appropriate install command
+
+<Tip>
+Pumu automatically detects package managers by checking lockfiles in this order: `bun.lockb`, `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`, `Cargo.toml`, `go.mod`, and more.
+</Tip>
+
+</Step>
+
+</Steps>
+
+## Common scenarios
 
 <CardGroup cols={2}>
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
+<Card title="Preview disk usage" icon="magnifying-glass">
+See what's taking up space across all your projects without deleting anything:
+
+```bash
+cd ~/dev
+pumu list
+```
+
+Perfect for understanding where your disk space is going before taking action.
 </Card>
 
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
+<Card title="Clean specific directory" icon="broom">
+Use the `-p` or `--path` flag to scan a specific directory:
+
+```bash
+pumu sweep -p ~/workspace
+```
+
+Works with all commands: `list`, `sweep`, `repair`, and `prune`.
 </Card>
 
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
+<Card title="Fix broken dependencies" icon="wrench">
+Automatically detect and repair corrupted or broken dependencies:
+
+```bash
+pumu repair
+```
+
+Pumu checks dependency health using:
+- `npm ls --json` for npm/pnpm
+- `yarn check --verify-tree` for yarn
+- `cargo check` for Rust
+- `go mod verify` for Go
+- `pip check` for Python
 </Card>
 
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
+<Card title="Bulk cleanup without prompts" icon="trash">
+Skip the interactive selection and delete all found folders:
+
+```bash
+pumu sweep --no-select
+```
+
+Use with caution! This immediately deletes all dependency folders without confirmation.
 </Card>
 
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Understanding repair mode
+
+Repair mode is powerful for fixing broken projects across your entire workspace:
+
+```bash
+pumu repair
+```
+
+**Example output:**
+
+```
+🔧 Scanning for projects with broken dependencies in '.'...
+⏱️  Found 3 projects. Checking health...
+
+📁 ./webapp (npm)
+   ❌ Missing: react, react-dom
+   🗑️  Removing node_modules...
+   📦 Reinstalling...
+   ✅ Repaired!
+
+📁 ./api (pnpm)
+   ✅ Healthy, skipping.
+
+📁 ./rust-cli (cargo)
+   ❌ Compilation errors detected
+   🗑️  Removing target...
+   📦 Rebuilding...
+   ✅ Repaired!
+
+-----
+🔧 Repair complete! Fixed 2/3 projects.
+```
+
+<Tip>
+Use `pumu repair --verbose` to see details for all projects, including healthy ones.
+</Tip>
+
+## Supported dependency folders
+
+Pumu can detect and clean these dependency and build folders:
+
+| Folder | Package Manager(s) | Typical Size |
+|--------|-------------------|--------------|
+| `node_modules` | npm, yarn, pnpm, bun, deno | 50-500+ MB |
+| `target` | cargo (Rust) | 100-2000+ MB |
+| `.venv` | pip (Python virtual env) | 50-300+ MB |
+| `.next` | Next.js | 100-500+ MB |
+| `.svelte-kit` | SvelteKit | 50-200+ MB |
+| `dist` | Various build tools | 10-100+ MB |
+| `build` | Various build tools | 10-100+ MB |
+
+## Safety features
+
+Pumu is designed with safety in mind:
+
+- **Interactive selection by default** - Choose exactly what to delete via TUI
+- **Dry-run with `list`** - Preview before deletion
+- **Smart folder detection** - Only removes known dependency folders
+- **Ignored system paths** - Skips `.git`, `.cache`, `Library`, IDE folders, and system directories
+- **Concurrent safe operations** - Uses mutexes and atomic operations to prevent race conditions
+- **Error resilience** - Continues processing even if individual operations fail
+
+<Warning>
+Pumu automatically skips these directories for safety:
+- `.Trash`, `.cache`, `.npm`, `.yarn`, `.cargo`, `.rustup`
+- `Library`, `AppData`, `Local`, `Roaming`
+- `.vscode`, `.idea`
+- `.git` (version control)
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+
+<Card title="Explore sweep command" icon="broom" href="/commands/sweep">
+Learn about all sweep options, flags, and advanced usage patterns
+</Card>
+
+<Card title="Package manager detection" icon="magnifying-glass-chart" href="/guides/package-managers">
+Understand how Pumu detects package managers and what lockfiles it looks for
+</Card>
+
+</CardGroup>

@@ -1,0 +1,200 @@
+---
+title: "list"
+description: "List heavy dependency folders without deleting them (dry-run mode)"
+---
+
+## Overview
+
+The `list` command recursively scans for heavy dependency folders and displays them **without deleting anything**. This is a safe, dry-run mode that lets you preview what's taking up space before taking action.
+
+Use this command to:
+- See how much disk space you can reclaim
+- Identify which projects have large dependency folders
+- Preview before running `sweep` or `prune`
+
+## Usage
+
+```bash
+pumu list [flags]
+```
+
+## Flags
+
+<ParamField path="-p, --path" type="string" default=".">
+  Root path to scan. Defaults to the current directory. Scans recursively through all subdirectories.
+</ParamField>
+
+<ParamField path="-h, --help" type="boolean" default="false">
+  Display help information for the list command.
+</ParamField>
+
+## Examples
+
+### List Heavy Folders in Current Directory
+
+Scan the current directory and all subdirectories:
+
+```bash
+pumu list
+```
+
+**Example Output:**
+
+```
+🔎 Listing heavy dependency folders in '.'...
+⏱️  Found 3 folders. Calculating sizes concurrently...
+
+Folder Path                                                                       | Size
+/home/user/projects/webapp/node_modules                                           | 1.23 GB 🚨
+/home/user/projects/rust-app/target                                               | 487.50 MB ⚠️
+/home/user/projects/api/.venv                                                     | 89.32 MB
+----------------------------------------------------------------------------------------------------
+📋 List complete! Found 3 heavy folders.
+💾 Total space that can be freed: 1.79 GB
+```
+
+### List Heavy Folders in Specific Directory
+
+Scan a specific directory using the `--path` flag:
+
+```bash
+pumu list --path ~/projects
+```
+
+**Example Output:**
+
+```
+🔎 Listing heavy dependency folders in '/home/user/projects'...
+⏱️  Found 12 folders. Calculating sizes concurrently...
+
+Folder Path                                                                       | Size
+/home/user/projects/webapp/node_modules                                           | 1.23 GB 🚨
+/home/user/projects/old-app/node_modules                                          | 956.78 MB ⚠️
+/home/user/projects/rust-cli/target                                               | 890.12 MB ⚠️
+/home/user/projects/api/node_modules                                              | 567.89 MB ⚠️
+/home/user/projects/python-app/.venv                                              | 234.56 MB ⚠️
+/home/user/projects/frontend/.next                                                | 189.00 MB ⚠️
+/home/user/projects/svelte-app/.svelte-kit                                        | 123.45 MB ⚠️
+/home/user/projects/lib/node_modules                                              | 98.76 MB
+/home/user/projects/tool/target                                                   | 87.65 MB
+/home/user/projects/scripts/.venv                                                 | 45.32 MB
+/home/user/projects/demo/dist                                                     | 23.45 MB
+/home/user/projects/example/build                                                 | 12.34 MB
+----------------------------------------------------------------------------------------------------
+📋 List complete! Found 12 heavy folders.
+💾 Total space that can be freed: 4.53 GB
+```
+
+### Short Path Format
+
+Using the short flag syntax:
+
+```bash
+pumu list -p ~/dev
+```
+
+## Color Coding
+
+Pumu uses visual indicators to help you prioritize cleanup:
+
+| Color | Icon | Size Range | Meaning |
+|-------|------|------------|----------|
+| **Red** | 🚨 | > 1 GB | Critical space users - highest priority for cleanup |
+| **Yellow** | ⚠️ | 100 MB - 1 GB | Moderate space users - good candidates for cleanup |
+| **Green** | - | < 100 MB | Minor space users - low priority |
+
+## Detected Folder Types
+
+The `list` command searches for these dependency and build folders:
+
+| Folder | Package Manager(s) | Typical Size |
+|--------|-------------------|-------------|
+| `node_modules` | npm, yarn, pnpm, bun, deno | 50-500+ MB |
+| `target` | cargo (Rust) | 100-2000+ MB |
+| `.venv` | pip (Python virtual env) | 50-300+ MB |
+| `.next` | Next.js | 100-500+ MB |
+| `.svelte-kit` | SvelteKit | 50-200+ MB |
+| `dist` | Various build tools | 10-100+ MB |
+| `build` | Various build tools | 10-100+ MB |
+
+## Performance
+
+The list command uses concurrent operations for optimal performance:
+
+- **Concurrent scanning** - Uses goroutines to scan multiple directories simultaneously
+- **Concurrent size calculation** - Calculates folder sizes in parallel (max 20 concurrent operations)
+- **Smart path skipping** - Automatically ignores system folders, caches, and version control directories
+
+### Ignored Paths
+
+To avoid scanning irrelevant directories, pumu automatically skips:
+
+- `.Trash`
+- `.cache`, `.npm`, `.yarn`, `.cargo`, `.rustup`
+- `Library`, `AppData`, `Local`, `Roaming`
+- `.vscode`, `.idea`
+- `.git` (version control)
+
+## Common Use Cases
+
+### Preview Before Sweeping
+
+Check what will be deleted before running sweep:
+
+```bash
+pumu list
+# Review the output
+pumu sweep  # Now delete with confidence
+```
+
+### Audit Disk Usage
+
+Find out which projects are consuming the most space:
+
+```bash
+cd ~/projects
+pumu list --path .
+```
+
+### Check Total Reclaimable Space
+
+See the total amount of space you can free:
+
+```bash
+pumu list -p ~/dev
+# Look for the "Total space that can be freed" line
+```
+
+### Scan Multiple Locations
+
+Run list on different directories to compare:
+
+```bash
+pumu list --path ~/work
+pumu list --path ~/personal
+pumu list --path ~/archive
+```
+
+<Tip>
+  The `list` command is completely safe - it **never deletes anything**. Run it as often as you like to monitor your disk usage.
+</Tip>
+
+<Note>
+  Size calculation happens concurrently for speed, but may take a few seconds for large folder trees. The progress indicator shows when calculation is complete.
+</Note>
+
+## Output Format
+
+The output is presented in a clean table format:
+
+1. **Header** - Shows the scan path and folder count
+2. **Table** - Lists each folder with its full path and size
+3. **Summary** - Shows total folders found and total reclaimable space
+
+All sizes are displayed in human-readable format (MB, GB) with appropriate color coding.
+
+## Related Commands
+
+- [`sweep`](/commands/sweep) - Delete the folders shown by list
+- [`prune`](/commands/prune) - Smart cleanup with dry-run option
+- [Default mode](/commands/default-mode) - Refresh a single project directory

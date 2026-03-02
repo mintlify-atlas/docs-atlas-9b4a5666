@@ -1,0 +1,142 @@
+---
+title: Introduction
+description: Fast, concurrent disk space management for developers who juggle multiple projects
+---
+
+## Stop hunting for `node_modules` folders
+
+You've been there: your disk is full, and you know those gigabytes are hiding in dependency folders scattered across old projects. You start manually searching for `node_modules`, `target`, `.venv` folders to delete. It takes forever.
+
+**Pumu does this for you, intelligently.**
+
+Pumu (Package Manager Utility) is a fast, concurrent disk space management CLI tool built for developers. It scans your filesystem for heavy dependency folders across multiple package managers, shows you exactly what's eating your disk space, and lets you clean them up with confidence.
+
+## Why Pumu?
+
+Modern development workflows leave traces everywhere. A single JavaScript project can consume **500+ MB** in `node_modules`. A Rust project's `target` folder can balloon to **2+ GB**. When you're working on dozens of projects, this adds up fast.
+
+Pumu solves this by:
+
+- **Finding** all dependency folders across your projects in seconds
+- **Showing** you exactly how much space you can reclaim
+- **Letting you choose** what to delete with an interactive interface
+- **Optionally reinstalling** dependencies after cleanup
+- **Fixing** corrupted dependencies automatically
+
+<CardGroup cols={2}>
+  <Card title="Blazingly fast" icon="bolt">
+    Concurrent scanning and deletion using goroutines with semaphore-based throttling. Handles thousands of folders in seconds.
+  </Card>
+  <Card title="Multi-language support" icon="code">
+    Works with npm, pnpm, yarn, bun, deno, cargo, go, and pip. Automatically detects package managers via lockfiles.
+  </Card>
+  <Card title="Smart and safe" icon="shield-check">
+    Interactive selection, dry-run mode, score-based pruning, and automatic health checks. Only removes what you choose.
+  </Card>
+  <Card title="Visual feedback" icon="eye">
+    Color-coded output based on folder size. Red for 1GB+, yellow for 100MB-1GB, green for smaller folders.
+  </Card>
+</CardGroup>
+
+## The disk space problem
+
+Here's what Pumu can detect and clean:
+
+| Folder | Package Manager(s) | Typical Size |
+|--------|-------------------|-------------|
+| `node_modules` | npm, yarn, pnpm, bun, deno | 50-500+ MB |
+| `target` | cargo (Rust) | 100-2000+ MB |
+| `.venv` | pip (Python virtual env) | 50-300+ MB |
+| `.next` | Next.js | 100-500+ MB |
+| `.svelte-kit` | SvelteKit | 50-200+ MB |
+| `dist` | Various build tools | 10-100+ MB |
+| `build` | Various build tools | 10-100+ MB |
+
+Across multiple projects, you're easily looking at **5-10+ GB** of reclaimable space.
+
+## Real-world example
+
+```bash
+$ pumu list
+🔎 Listing heavy dependency folders in '.'...
+⏱️  Found 3 folders. Calculating sizes concurrently...
+
+Folder Path                                            | Size
+/home/user/projects/webapp/node_modules                | 1.23 GB 🚨
+/home/user/projects/rust-app/target                    | 487.50 MB ⚠️
+/home/user/projects/api/.venv                          | 89.32 MB
+------------------------------------------------------------------
+📋 List complete! Found 3 heavy folders.
+💾 Total space that can be freed: 1.79 GB
+```
+
+<Note>
+  Pumu uses **concurrent goroutines** to calculate sizes in parallel, making it significantly faster than traditional find/du commands.
+</Note>
+
+## How it works
+
+Pumu scans your filesystem looking for known dependency folders. For each folder found, it:
+
+1. **Detects the package manager** by checking for lockfiles (e.g., `package-lock.json`, `Cargo.toml`, `pnpm-lock.yaml`)
+2. **Calculates folder size** concurrently using bounded goroutines (max 20 parallel operations)
+3. **Presents results** with color-coded visual feedback
+4. **Lets you select** which folders to process
+5. **Optionally reinstalls** dependencies after cleanup
+
+### Package manager detection priority
+
+Pumu checks for package managers in this order:
+
+1. **Bun** - `bun.lockb` or `bun.lock`
+2. **pnpm** - `pnpm-lock.yaml`
+3. **Yarn** - `yarn.lock`
+4. **npm** - `package-lock.json`
+5. **Deno** - `deno.json` or `deno.jsonc`
+6. **Cargo** - `Cargo.toml`
+7. **Go** - `go.mod`
+8. **Pip** - `requirements.txt` or `pyproject.toml`
+
+## Key features
+
+### Interactive selection
+
+Choose exactly which folders to delete with a full-featured terminal UI:
+
+- Navigate with arrow keys or Vim bindings (`j`/`k`)
+- Select/deselect with `space`
+- Select all (`a`), deselect all (`n`), or invert selection (`i`)
+- Jump to first/last with `g`/`G`
+- Confirm with `enter`, cancel with `q` or `esc`
+
+### Smart prune mode
+
+Score-based intelligent cleanup that only removes what's safe:
+
+- **90-95 score**: Orphan folders (no lockfile) or build caches
+- **60-80 score**: Stale lockfiles (30-90+ days without changes)
+- **45 score**: Standard dependency folders with lockfile
+- **15-20 score**: Active projects or uncommitted changes (skipped)
+
+### Repair mode
+
+Automatically detect and fix corrupted dependencies:
+
+- Checks dependency health using package manager commands
+- Removes and reinstalls broken dependencies
+- Works with npm, pnpm, yarn, cargo, go, and pip
+
+<Warning>
+  Pumu automatically skips system folders like `.git`, `.cache`, `Library`, and IDE directories to keep scans fast and safe.
+</Warning>
+
+## What's next?
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Get Pumu installed on your system in under a minute
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Go from installation to your first cleanup in 5 minutes
+  </Card>
+</CardGroup>

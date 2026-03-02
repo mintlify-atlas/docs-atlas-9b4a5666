@@ -1,0 +1,394 @@
+---
+title: "Use Cases"
+description: "Real-world scenarios for using Pumu to manage disk space across your development projects"
+---
+
+Explore practical use cases showing how Pumu helps developers reclaim disk space, fix broken dependencies, and maintain clean development environments.
+
+## Clean Up Development Machine
+
+**Problem**: Your development machine is running low on disk space with hundreds of `node_modules`, `target`, and other dependency folders scattered across projects.
+
+**Solution**: Use `pumu sweep` to scan and interactively clean up all heavy dependency folders across your projects.
+
+```bash
+cd ~/projects
+pumu sweep
+```
+
+**Expected Output**:
+
+```
+🔎 Scanning for heavy dependency folders in '.'...
+⏱️  Found 3 folders. Calculating sizes concurrently...
+
+🗑️  Select folders to delete:
+▸ [✓] /home/user/projects/webapp/node_modules       1.23 GB
+  [✓] /home/user/projects/rust-app/target            487.50 MB
+  [ ] /home/user/projects/api/.venv                  89.32 MB
+
+  2/3 selected
+  press ? for help
+```
+
+**Tips**:
+- Use the interactive selection to review each folder before deletion
+- Deselect active projects you're currently working on
+- Press `a` to select all or `i` to invert selection
+- This can free up several gigabytes in seconds
+
+---
+
+## Preview Disk Usage Before Deleting
+
+**Problem**: You want to see what's taking up space across your workspace without accidentally deleting anything.
+
+**Solution**: Use `pumu list` to perform a dry-run scan that shows all heavy folders and total space that can be freed.
+
+```bash
+cd ~/workspace
+pumu list
+```
+
+**Expected Output**:
+
+```
+🔎 Listing heavy dependency folders in '.'...
+⏱️  Found 3 folders. Calculating sizes concurrently...
+
+Folder Path                                                                       | Size
+/home/user/projects/webapp/node_modules                                           | 1.23 GB 🚨
+/home/user/projects/rust-app/target                                               | 487.50 MB ⚠️
+/home/user/projects/api/.venv                                                     | 89.32 MB
+----------------------------------------------------------------------------------------------------
+📋 List complete! Found 3 heavy folders.
+💾 Total space that can be freed: 1.79 GB
+```
+
+**Tips**:
+- Use `--path` flag to scan a specific directory: `pumu list --path ~/dev`
+- Red folders (🚨) are over 1 GB - prioritize these for cleanup
+- Yellow folders (⚠️) are 100 MB - 1 GB - moderate space users
+- This is completely safe - nothing is deleted in list mode
+
+---
+
+## Bulk Cleanup with Reinstall
+
+**Problem**: You need to clean up multiple projects but want to ensure dependencies are reinstalled so the projects remain functional.
+
+**Solution**: Use `pumu sweep --reinstall` to delete heavy folders and then choose which projects to reinstall.
+
+```bash
+cd ~/dev
+pumu sweep --reinstall
+```
+
+**After selecting folders to delete**, you'll see a second interactive prompt:
+
+```
+Select projects to reinstall dependencies:
+▸ [✓] /home/user/dev/webapp (npm)
+  [✓] /home/user/dev/api (pnpm)
+  [ ] /home/user/dev/old-project (npm)
+
+  2/3 selected
+```
+
+**Expected Output** (during reinstall):
+
+```
+📦 Reinstalling dependencies for 2 projects...
+
+📁 /home/user/dev/webapp (npm)
+   Running: npm install
+   ✅ Installed successfully
+
+📁 /home/user/dev/api (pnpm)
+   Running: pnpm install
+   ✅ Installed successfully
+
+🎉 Reinstall complete! 2/2 succeeded.
+```
+
+**Tips**:
+- Don't reinstall old or archived projects you're not using
+- Pumu automatically detects the correct package manager for each project
+- Use `--no-select` flag to skip interactive prompts: `pumu sweep --reinstall --no-select`
+
+---
+
+## Fix Broken Dependencies Across Projects
+
+**Problem**: Several projects have corrupted or incomplete dependencies causing build failures or missing packages.
+
+**Solution**: Use `pumu repair` to automatically detect and fix broken dependencies across all projects.
+
+```bash
+cd ~/projects
+pumu repair
+```
+
+**Expected Output**:
+
+```
+🔧 Scanning for projects with broken dependencies in '.'...
+⏱️  Found 3 projects. Checking health...
+
+📁 ./webapp (npm)
+   ❌ Missing: react, react-dom
+   🗑️  Removing node_modules...
+   📦 Reinstalling...
+   ✅ Repaired!
+
+📁 ./api (pnpm)
+   ✅ Healthy, skipping.
+
+📁 ./rust-cli (cargo)
+   ❌ Compilation errors detected
+   🗑️  Removing target...
+   📦 Rebuilding...
+   ✅ Repaired!
+
+-----
+🔧 Repair complete! Fixed 2/3 projects.
+```
+
+**Tips**:
+- Repair mode runs health checks before taking any action
+- Use `--verbose` to see details for all projects including healthy ones
+- Health checks are ecosystem-specific: `npm ls` for npm, `cargo check` for Rust, etc.
+- Only projects with detected issues are repaired - healthy projects are left untouched
+
+---
+
+## Safe Cleanup (Prune Mode)
+
+**Problem**: You want to clean up disk space but are worried about accidentally deleting dependencies from active projects.
+
+**Solution**: Use `pumu prune` for intelligent, score-based cleanup that only removes folders that are safe to delete.
+
+```bash
+cd ~/projects
+pumu prune
+```
+
+**Expected Output**:
+
+```
+🌿 Pruning safely deletable folders in '.'...
+⏱️  Found 5 folders. Analyzing...
+
+Folder Path                                             | Size       | Score | Reason
+./old-project/node_modules                              | 456.78 MB  |   95 | 🔴 No lockfile (orphan)
+./webapp/.next                                          | 234.56 MB  |   90 | 🟢 Build cache (re-generable)
+./api/node_modules                                      | 189.00 MB  |   60 | 🟡 Lockfile stale (45 days)
+./active-project/node_modules                            | 567.89 MB  |    20 | ⚪ Active project (skipped)
+./wip/target                                             | 890.12 MB  |    15 | ⚪ Uncommitted changes (skipped)
+
+----------------------------------------------
+🌿 Prune complete! Removed 3 folders (score ≥ 50).
+💾 Space freed: 880.34 MB (of 2.34 GB total found)
+```
+
+**Prune Scoring System**:
+
+| Score | Reason | Safety Level |
+|-------|--------|-------------|
+| 90-95 | Orphan folder (no lockfile) or build cache | Very Safe |
+| 60-80 | Stale lockfile (30-90+ days) | Safe |
+| 45 | Dependency folder with lockfile | Moderate |
+| 15-20 | Active project or uncommitted changes | Protected |
+
+**Tips**:
+- Preview first with `--dry-run`: `pumu prune --dry-run`
+- Increase safety with higher threshold: `pumu prune --threshold 80`
+- Prune mode is less destructive than sweep - perfect for regular maintenance
+- Folders with uncommitted changes are automatically protected
+
+---
+
+## CI/CD Cleanup Scenarios
+
+**Problem**: Your CI/CD pipeline needs to clean up dependency folders before rebuilding to ensure a fresh build environment.
+
+**Solution**: Use `pumu sweep --no-select` in CI scripts to skip interactive prompts and delete all found folders.
+
+```bash
+# In your CI/CD script
+cd /app
+pumu sweep --no-select
+```
+
+**Alternative**: Use default mode to refresh the current directory:
+
+```bash
+# Detects package manager and reinstalls
+cd /app
+pumu
+```
+
+**Expected Output** (default mode):
+
+```
+Running refresh in current directory...
+🔍 Detected package manager: npm
+🗑️  Removing node_modules...
+✅ Removed in 1.23s
+📦 Running npm install...
+[npm install output...]
+🎉 Refresh complete!
+```
+
+**Tips for CI/CD**:
+- Use `--no-select` flag to avoid hanging on interactive prompts
+- Default mode (`pumu`) is perfect for single-directory refreshes
+- Consider using `pumu repair` before builds to catch dependency issues early
+- Combine with `--path` to target specific directories
+
+---
+
+## Working with Monorepos
+
+**Problem**: Your monorepo has multiple packages, each with their own `node_modules`, creating significant disk space usage.
+
+**Solution**: Scan from the monorepo root to find and manage all dependency folders across packages.
+
+```bash
+cd ~/monorepo
+pumu list
+```
+
+**Example Output for Monorepo**:
+
+```
+🔎 Listing heavy dependency folders in '.'...
+⏱️  Found 8 folders. Calculating sizes concurrently...
+
+Folder Path                                              | Size
+./packages/web/node_modules                              | 892.45 MB ⚨
+./packages/api/node_modules                              | 567.32 MB ⚠️
+./packages/shared/node_modules                           | 234.11 MB ⚠️
+./apps/admin/node_modules                                | 678.90 MB ⚠️
+./apps/mobile/.next                                      | 156.78 MB ⚠️
+./packages/utils/node_modules                            | 89.23 MB
+./tools/cli/target                                       | 1.12 GB 🚨
+./packages/sdk/dist                                      | 45.67 MB
+-------------------------------------------------------------------------------------
+📋 List complete! Found 8 heavy folders.
+💾 Total space that can be freed: 3.76 GB
+```
+
+**Tips**:
+- Use interactive sweep to selectively clean specific packages
+- Build caches (`.next`, `dist`) are always safe to remove
+- Consider using prune mode for intelligent cleanup of stale packages
+- Some monorepos use workspace hoisting - Pumu detects both hoisted and per-package `node_modules`
+
+---
+
+## Developer Onboarding (Free Up Space Quickly)
+
+**Problem**: A new developer's machine is running out of space after cloning multiple repositories with dependencies.
+
+**Solution**: Quick workflow to audit and free up space immediately.
+
+**Step 1**: See what's taking up space
+
+```bash
+cd ~
+pumu list --path ~/projects
+```
+
+**Step 2**: Use safe prune to remove only orphan and stale folders
+
+```bash
+cd ~/projects
+pumu prune --dry-run          # Preview first
+pumu prune --threshold 80     # Conservative cleanup
+```
+
+**Step 3**: For more aggressive cleanup, use interactive sweep
+
+```bash
+cd ~/projects
+pumu sweep                    # Select folders interactively
+```
+
+**Expected Space Savings**:
+- Small workspace (5-10 projects): 2-5 GB
+- Medium workspace (20-30 projects): 10-20 GB
+- Large workspace (50+ projects): 30-50+ GB
+
+**Onboarding Checklist**:
+- ✅ Run `pumu list` to audit disk usage
+- ✅ Use `pumu prune` for safe initial cleanup
+- ✅ Archive or delete old project folders entirely
+- ✅ Keep only active projects with dependencies installed
+- ✅ Set up regular cleanup schedule (weekly/monthly)
+
+---
+
+## Common Workflows
+
+<CardGroup cols={2}>
+
+<Card title="Weekly Maintenance" icon="calendar">
+  ```bash
+  cd ~/projects
+  pumu prune --dry-run
+  pumu prune
+  ```
+  Free up space from stale folders automatically
+</Card>
+
+<Card title="Before Major Update" icon="arrow-up">
+  ```bash
+  cd ~/project
+  pumu repair
+  ```
+  Ensure dependencies are healthy before upgrading
+</Card>
+
+<Card title="Quick Space Check" icon="gauge">
+  ```bash
+  pumu list
+  ```
+  See what's using space without making changes
+</Card>
+
+<Card title="Full Workspace Reset" icon="rotate">
+  ```bash
+  cd ~/dev
+  pumu sweep --reinstall
+  ```
+  Clean everything and reinstall fresh dependencies
+</Card>
+
+</CardGroup>
+
+---
+
+## Next Steps
+
+Now that you understand how to use Pumu for different scenarios:
+
+<CardGroup cols={2}>
+
+<Card title="Commands Reference" icon="terminal" href="/commands/sweep">
+  Learn all available commands and flags in detail
+</Card>
+
+<Card title="Safety Features" icon="shield" href="/guides/safety">
+  Learn about Pumu's safety mechanisms
+</Card>
+
+<Card title="Package Managers" icon="box" href="/guides/package-managers">
+  See how Pumu detects and works with different ecosystems
+</Card>
+
+<Card title="Performance Tips" icon="rocket" href="/guides/performance">
+  Optimize scanning and cleanup for large workspaces
+</Card>
+
+</CardGroup>

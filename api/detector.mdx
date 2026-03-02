@@ -1,0 +1,204 @@
+---
+title: 'Detector'
+description: 'Package manager detection logic across multiple ecosystems'
+---
+
+The `detector` module provides intelligent package manager detection by analyzing lock files and manifest files in project directories.
+
+## Overview
+
+Detector uses a priority-based approach to identify which package manager a project uses. This is critical for:
+
+- Determining the correct install command
+- Identifying the appropriate dependency folder to clean
+- Running ecosystem-specific health checks
+
+## Types
+
+### PackageManager
+
+Represents the type of package manager detected in a project.
+
+```go
+type PackageManager string
+```
+
+## Constants
+
+### Supported Package Managers
+
+```go
+const (
+    Npm     PackageManager = "npm"
+    Pnpm    PackageManager = "pnpm"
+    Yarn    PackageManager = "yarn"
+    Bun     PackageManager = "bun"
+    Deno    PackageManager = "deno"
+    Cargo   PackageManager = "cargo"
+    Go      PackageManager = "go"
+    Pip     PackageManager = "pip"
+    Unknown PackageManager = "unknown"
+)
+```
+
+Pumu supports 8 major package managers across JavaScript, Rust, Go, and Python ecosystems.
+
+## Functions
+
+### DetectManager
+
+Identifies the package manager used in a directory by checking for lock files and manifests.
+
+```go
+func DetectManager(dir string) PackageManager
+```
+
+<ParamField path="dir" type="string" required>
+  The directory path to check for package manager files
+</ParamField>
+
+<ResponseField name="PackageManager" type="PackageManager">
+  Returns the detected package manager, or `Unknown` if none found
+</ResponseField>
+
+#### Detection Priority
+
+The function checks for lock files in order of specificity:
+
+1. **Bun** - `bun.lockb`, `bun.lock`
+2. **Pnpm** - `pnpm-lock.yaml`
+3. **Yarn** - `yarn.lock`
+4. **Npm** - `package-lock.json`
+5. **Deno** - `deno.json`, `deno.jsonc`
+6. **Cargo** - `Cargo.toml`
+7. **Go** - `go.mod`
+8. **Pip** - `requirements.txt`, `pyproject.toml`
+
+The first matching file determines the package manager.
+
+#### Example usage
+
+```go
+// From scanner/scanner.go
+func RefreshCurrentDir() error {
+    dir := "."
+    pm := pkg.DetectManager(dir)
+    if pm == pkg.Unknown {
+        return fmt.Errorf("could not detect package manager in current directory")
+    }
+    
+    fmt.Printf("🔍 Detected package manager: %s\n", pm)
+    // ... continue with removal and reinstall
+}
+```
+
+```go
+// From scanner/repair.go
+for _, proj := range projects {
+    pm := pkg.DetectManager(proj.Dir)
+    if pm != pkg.Unknown {
+        targets = append(targets, reinstallTarget{Dir: proj.Dir, PM: pm})
+    }
+}
+```
+
+## Detection Logic
+
+### JavaScript Ecosystem
+
+For JavaScript/TypeScript projects, detection follows modern tooling preferences:
+
+- **Bun** has highest priority (fastest, modern)
+- **Pnpm** second (efficient disk usage)
+- **Yarn** third (popular in monorepos)
+- **Npm** last (fallback, most common)
+
+This ensures that if multiple lock files exist (e.g., during migration), the most modern tool is preferred.
+
+### Why Lock Files?
+
+Lock files are preferred over manifest files (`package.json`, `Cargo.toml`) because:
+
+1. They indicate which package manager was actually used
+2. They're generated automatically by the respective tool
+3. They avoid ambiguity (many projects have `package.json` but use different managers)
+
+### Cross-ecosystem Support
+
+```go
+managers := map[PackageManager][]string{
+    Bun:   {"bun.lockb", "bun.lock"},
+    Pnpm:  {"pnpm-lock.yaml"},
+    Yarn:  {"yarn.lock"},
+    Npm:   {"package-lock.json"},
+    Deno:  {"deno.json", "deno.jsonc"},
+    Cargo: {"Cargo.toml"},
+    Go:    {"go.mod"},
+    Pip:   {"requirements.txt", "pyproject.toml"},
+}
+```
+
+## Helper Functions
+
+### fileExists
+
+Internal helper to check if a file exists and is not a directory.
+
+```go
+func fileExists(filename string) bool
+```
+
+Used internally by `DetectManager` to verify lock file presence.
+
+## Usage Patterns
+
+### Pattern 1: Detecting Before Operations
+
+```go
+pm := pkg.DetectManager(projectDir)
+if pm == pkg.Unknown {
+    return fmt.Errorf("no package manager detected")
+}
+
+// Safe to proceed with pm-specific operations
+targetFolder := getTargetFolder(pm)
+```
+
+### Pattern 2: Filtering Projects
+
+```go
+var validProjects []project
+for _, dir := range candidateDirs {
+    pm := pkg.DetectManager(dir)
+    if pm != pkg.Unknown {
+        validProjects = append(validProjects, project{Dir: dir, PM: pm})
+    }
+}
+```
+
+### Pattern 3: Display to User
+
+```go
+pm := pkg.DetectManager(dir)
+fmt.Printf("📁 %s (%s)\n", dir, pm)  // e.g., "📁 ./my-app (pnpm)"
+```
+
+## Extension
+
+To add support for a new package manager:
+
+1. Add a new constant to `PackageManager` type
+2. Update the `managers` map in `DetectManager` with lock file patterns
+3. Update corresponding functions in `installer.go`, `checker.go`, and `analyzer.go`
+
+```go
+const (
+    // ... existing managers
+    Composer PackageManager = "composer"  // PHP example
+)
+
+managers := map[PackageManager][]string{
+    // ... existing mappings
+    Composer: {"composer.lock"},
+}
+```

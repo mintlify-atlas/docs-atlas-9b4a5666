@@ -1,0 +1,323 @@
+---
+title: 'MultiSelect UI Component'
+description: 'Interactive Bubble Tea TUI component for multi-selection'
+---
+
+The `multiselect` package provides an interactive terminal user interface (TUI) component built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) for selecting multiple items from a list. It's used throughout Pumu for interactive folder selection in sweep and reinstall operations.
+
+## Location
+
+`internal/ui/multiselect.go`
+
+## Core Types
+
+### Item
+
+Represents a selectable item in the multi-select list.
+
+```go
+type Item struct {
+    Label    string  // Primary text (e.g., folder path)
+    Detail   string  // Secondary text (e.g., formatted size)
+    Selected bool    // Selection state
+}
+```
+
+**Fields:**
+- `Label` - The main display text for the item
+- `Detail` - Optional supplementary information displayed alongside the label
+- `Selected` - Whether the item is currently selected
+
+### Result
+
+Holds the outcome of the multi-select interaction.
+
+```go
+type Result struct {
+    Items    []Item  // All items with updated selection states
+    Canceled bool    // True if user canceled (q/esc)
+}
+```
+
+**Fields:**
+- `Items` - The complete list of items with their final selection states
+- `Canceled` - Indicates whether the user canceled the operation instead of confirming
+
+### model
+
+Internal Bubble Tea model (unexported). Implements the `tea.Model` interface.
+
+```go
+type model struct {
+    title    string
+    items    []Item
+    cursor   int
+    showHelp bool
+    done     bool
+    canceled bool
+}
+```
+
+**Fields:**
+- `title` - Header text displayed at the top
+- `items` - The list of selectable items
+- `cursor` - Current cursor position (0-based index)
+- `showHelp` - Whether the help menu is currently visible
+- `done` - Whether the interaction is complete
+- `canceled` - Whether the user canceled
+
+## Public API
+
+### RunMultiSelect
+
+Launches an interactive multi-select prompt and returns the result.
+
+```go
+func RunMultiSelect(title string, items []Item) (Result, error)
+```
+
+**Parameters:**
+- `title` - The header text shown at the top of the selection UI
+- `items` - Slice of items to display. Pre-set `Selected: true` for default selections
+
+**Returns:**
+- `Result` - Contains the items with updated selection states and cancellation status
+- `error` - Returns error if the Bubble Tea program fails to run
+
+**Behavior:**
+- All items passed in with `Selected: true` will be pre-selected by default
+- Blocks until user confirms (Enter) or cancels (q/Esc)
+- Returns immediately if an error occurs
+
+## Bubble Tea Implementation
+
+### Init
+
+```go
+func (m model) Init() tea.Cmd
+```
+
+Initializes the model. Returns `nil` (no initial commands).
+
+### Update
+
+```go
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd)
+```
+
+Handles incoming messages and updates the model state. Processes:
+- **Keyboard input** via `handleKeyMsg()`
+- Returns `tea.Quit` command when done
+
+### View
+
+```go
+func (m model) View() string
+```
+
+Renders the current state as a string for terminal display.
+
+**Rendering includes:**
+1. **Title** - Bold, purple header
+2. **Item list** - Each item shows:
+   - Cursor indicator (`▸` for current item)
+   - Checkbox (`[✓]` for selected, `[ ]` for unselected)
+   - Label text (highlighted when cursor is on it)
+   - Detail text in blue (if present)
+3. **Status bar** - Shows `X/Y selected` count
+4. **Help text** - Shows `press ? for help` or full keyboard shortcuts when toggled
+
+## Keyboard Shortcuts
+
+| Key | Action | Description |
+|-----|--------|-------------|
+| `↑` / `k` | Move up | Move cursor to previous item |
+| `↓` / `j` | Move down | Move cursor to next item |
+| `g` | Go to first | Jump to first item in list |
+| `G` | Go to last | Jump to last item in list |
+| `space` | Toggle item | Toggle selection state of current item |
+| `a` | Select all | Select all items in the list |
+| `n` | Deselect all | Clear all selections |
+| `i` | Invert selection | Toggle selection state of all items |
+| `enter` | Confirm | Accept current selections and exit |
+| `q` / `esc` / `ctrl+c` | Cancel | Exit without saving changes |
+| `?` | Toggle help | Show/hide full keyboard shortcuts |
+
+## Message Handling
+
+### handleKeyMsg
+
+```go
+func (m model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd)
+```
+
+Processes keyboard input and routes to appropriate handlers:
+- **Navigation keys** - Delegates to `handleNavigation()`
+- **Selection keys** - Delegates to `handleSelection()`
+- **Help toggle** - `?` key toggles help display
+- **Confirm** - `enter` sets `done = true` and quits
+- **Cancel** - `q`, `esc`, or `ctrl+c` sets both `canceled` and `done`, then quits
+
+### handleNavigation
+
+```go
+func (m *model) handleNavigation(key string)
+```
+
+Updates cursor position based on navigation keys:
+- `up` / `k` - Decrement cursor (bounded at 0)
+- `down` / `j` - Increment cursor (bounded at list length)
+- `home` / `g` - Set cursor to 0
+- `end` / `G` - Set cursor to last item
+
+### handleSelection
+
+```go
+func (m *model) handleSelection(key string)
+```
+
+Modifies item selection states:
+- `space` - Toggle current item
+- `a` - Set all items to selected
+- `n` - Clear all selections
+- `i` - Invert all selections
+
+## Visual Styling
+
+The component uses [Lipgloss](https://github.com/charmbracelet/lipgloss) for styling:
+
+| Element | Color | Style |
+|---------|-------|-------|
+| Title | Purple `#7C3AED` | Bold |
+| Cursor | Purple `#7C3AED` | Bold |
+| Selected checkbox | Green `#22C55E` | Bold |
+| Unselected checkbox | Gray `#6B7280` | Regular |
+| Active item label | White `#E5E7EB` | Regular |
+| Inactive item label | Gray `#9CA3AF` | Regular |
+| Detail text | Blue `#60A5FA` | Regular |
+| Status bar | Purple `#A78BFA` | Regular |
+| Help key | Purple `#A78BFA` | Bold |
+| Help description | Gray `#9CA3AF` | Regular |
+
+## Usage Example
+
+### Basic Usage (from sweep command)
+
+```go
+package scanner
+
+import (
+    "pumu/internal/ui"
+    "fmt"
+)
+
+// Present interactive selection for deletion
+func selectFolders(folders []TargetFolder, title string) ([]TargetFolder, error) {
+    // Convert to UI items
+    items := make([]ui.Item, len(folders))
+    for i, f := range folders {
+        items[i] = ui.Item{
+            Label:    f.Path,
+            Detail:   formatSize(f.Size),  // e.g., "1.23 GB"
+            Selected: true,                 // Pre-select all by default
+        }
+    }
+
+    // Launch interactive selection
+    result, err := ui.RunMultiSelect(title, items)
+    if err != nil {
+        return nil, err
+    }
+
+    // Handle cancellation
+    if result.Canceled {
+        return nil, nil
+    }
+
+    // Extract selected folders
+    var selected []TargetFolder
+    for i, item := range result.Items {
+        if item.Selected {
+            selected = append(selected, folders[i])
+        }
+    }
+
+    return selected, nil
+}
+```
+
+### Reinstall Selection (from sweep --reinstall)
+
+```go
+// Interactive selection for reinstallation
+items := make([]ui.Item, len(targets))
+for i, t := range targets {
+    items[i] = ui.Item{
+        Label:    t.Dir,               // e.g., "/home/user/webapp"
+        Detail:   string(t.PM),        // e.g., "npm"
+        Selected: true,
+    }
+}
+
+result, err := ui.RunMultiSelect("📦 Select projects to reinstall:", items)
+if err != nil {
+    return fmt.Errorf("selection failed: %w", err)
+}
+
+if result.Canceled {
+    fmt.Println("Reinstallation canceled")
+    return nil
+}
+
+// Process selected projects
+for i, item := range result.Items {
+    if item.Selected {
+        installDependencies(targets[i].Dir, targets[i].PM)
+    }
+}
+```
+
+## Integration Points
+
+The multi-select component is used in:
+
+1. **Sweep command** (`scanner.SweepDir`)
+   - Selecting which folders to delete
+   - Selecting which projects to reinstall (when `--reinstall` is used)
+
+2. **Command-line flow**
+   - `pumu sweep` - Interactive folder deletion selection
+   - `pumu sweep --reinstall` - Two-stage selection (delete + reinstall)
+   - `pumu sweep --no-select` - Bypasses multi-select entirely
+
+## Error Handling
+
+```go
+result, err := ui.RunMultiSelect(title, items)
+if err != nil {
+    // Handle Bubble Tea runtime error
+    return fmt.Errorf("failed to run multi-select: %w", err)
+}
+
+if result.Canceled {
+    // User pressed q/esc - treat as graceful cancellation
+    return nil
+}
+
+// Process result.Items normally
+```
+
+## Implementation Notes
+
+- **Thread-safe** - Model is isolated within Bubble Tea's event loop
+- **No external state** - All state is contained in the model struct
+- **Keyboard-driven** - No mouse support
+- **Accessible** - Uses standard terminal conventions (arrow keys, vi keys, etc.)
+- **Minimal dependencies** - Only requires Bubble Tea and Lipgloss
+- **Single-use** - Each `RunMultiSelect()` call creates a fresh program instance
+
+## See Also
+
+- [Bubble Tea Documentation](https://github.com/charmbracelet/bubbletea)
+- [Lipgloss Styling Guide](https://github.com/charmbracelet/lipgloss)
+- Pumu source: `internal/scanner/scanner.go:selectFolders()`

@@ -1,0 +1,262 @@
+---
+title: "sweep"
+description: "Delete heavy dependency folders with interactive selection"
+---
+
+## Overview
+
+The `sweep` command recursively scans for heavy dependency folders and **deletes** them. By default, it shows an interactive multi-select interface so you can choose exactly which folders to remove.
+
+This is the primary cleanup command for freeing up disk space across multiple projects.
+
+## Usage
+
+```bash
+pumu sweep [flags]
+```
+
+## Flags
+
+<ParamField path="-p, --path" type="string" default=".">
+  Root path to scan. Defaults to the current directory. Scans recursively through all subdirectories.
+</ParamField>
+
+<ParamField path="--reinstall" type="boolean" default="false">
+  Reinstall packages after removing their folders. After deletion, shows another interactive selection to choose which projects to reinstall.
+</ParamField>
+
+<ParamField path="--no-select" type="boolean" default="false">
+  Skip interactive selection and delete/reinstall all found folders immediately. Use with caution.
+</ParamField>
+
+<ParamField path="-h, --help" type="boolean" default="false">
+  Display help information for the sweep command.
+</ParamField>
+
+## Examples
+
+### Interactive Sweep (Default)
+
+Scan and choose which folders to delete:
+
+```bash
+pumu sweep
+```
+
+**Example Output:**
+
+```
+🔎 Scanning for heavy dependency folders in '.'...
+⏱️  Found 3 folders. Calculating sizes concurrently...
+
+🗑️  Select folders to delete:
+▸ [✓] /home/user/projects/webapp/node_modules       1.23 GB
+  [✓] /home/user/projects/rust-app/target            487.50 MB
+  [ ] /home/user/projects/api/.venv                  89.32 MB
+
+  2/3 selected
+  press ? for help
+```
+
+After pressing `enter`, the selected folders are deleted:
+
+```
+🗑️  Deleting 2 folders...
+✅ Deleted /home/user/projects/webapp/node_modules (1.23 GB)
+✅ Deleted /home/user/projects/rust-app/target (487.50 MB)
+
+🎉 Sweep complete! Freed 1.72 GB
+```
+
+### Sweep with Reinstall
+
+Delete folders and choose which to reinstall:
+
+```bash
+pumu sweep --reinstall
+```
+
+**Example Output:**
+
+```
+🔎 Scanning for heavy dependency folders in '.'...
+⏱️  Found 3 folders. Calculating sizes concurrently...
+
+🗑️  Select folders to delete:
+▸ [✓] /home/user/projects/webapp/node_modules       1.23 GB
+  [✓] /home/user/projects/rust-app/target            487.50 MB
+  [✓] /home/user/projects/api/.venv                  89.32 MB
+
+  3/3 selected
+  press ? for help
+
+[After confirming deletion]
+
+🗑️  Deleting 3 folders...
+✅ Deleted /home/user/projects/webapp/node_modules (1.23 GB)
+✅ Deleted /home/user/projects/rust-app/target (487.50 MB)
+✅ Deleted /home/user/projects/api/.venv (89.32 MB)
+
+📦 Select projects to reinstall:
+▸ [✓] /home/user/projects/webapp (npm)
+  [ ] /home/user/projects/rust-app (cargo)
+  [✓] /home/user/projects/api (pnpm)
+
+  2/3 selected
+  press ? for help
+
+[After confirming reinstall]
+
+📦 Reinstalling 2 projects...
+✅ Reinstalled /home/user/projects/webapp (npm install)
+✅ Reinstalled /home/user/projects/api (pnpm install)
+
+🎉 Sweep complete! Freed 1.79 GB and reinstalled 2 projects.
+```
+
+### Sweep Without Interactive Selection
+
+Delete all found folders immediately (old behavior):
+
+```bash
+pumu sweep --no-select
+```
+
+**Example Output:**
+
+```
+🔎 Scanning for heavy dependency folders in '.'...
+⏱️  Found 3 folders. Calculating sizes concurrently...
+
+🗑️  Deleting 3 folders...
+✅ Deleted /home/user/projects/webapp/node_modules (1.23 GB)
+✅ Deleted /home/user/projects/rust-app/target (487.50 MB)
+✅ Deleted /home/user/projects/api/.venv (89.32 MB)
+
+🎉 Sweep complete! Freed 1.79 GB
+```
+
+### Sweep Specific Directory
+
+Scan and sweep a specific path:
+
+```bash
+pumu sweep --path ~/old-projects
+```
+
+### Sweep and Reinstall All (No Prompts)
+
+Combine flags for full automation:
+
+```bash
+pumu sweep --reinstall --no-select
+```
+
+<Warning>
+  Using `--no-select` will delete **all** found folders without confirmation. Use with caution.
+</Warning>
+
+## Interactive Selection Shortcuts
+
+When the interactive multi-select interface appears, use these keyboard shortcuts:
+
+| Key | Action |
+|-----|--------|
+| `↑` / `k` | Move cursor up |
+| `↓` / `j` | Move cursor down |
+| `g` | Go to first item |
+| `G` | Go to last item |
+| `space` | Toggle selection of current item |
+| `a` | Select all items |
+| `n` | Deselect all items |
+| `i` | Invert selection |
+| `enter` | Confirm selection and proceed |
+| `q` / `esc` | Cancel and exit |
+| `?` | Toggle help display |
+
+<Tip>
+  **Vim users**: The `j`/`k` navigation keys work just like vim! Use `G` to jump to the bottom and `g` to jump to the top.
+</Tip>
+
+## How Sweep Works
+
+1. **Scans recursively** - Walks through the directory tree looking for dependency folders
+2. **Calculates sizes** - Concurrently measures folder sizes using goroutines (max 20 concurrent operations)
+3. **Shows selection UI** - Presents an interactive list (unless `--no-select` is used)
+4. **Deletes concurrently** - Removes selected folders in parallel for speed
+5. **Reinstalls if requested** - Shows another selection UI for which projects to reinstall
+
+## Common Use Cases
+
+### Clean Up Development Machine
+
+Free up disk space across all your projects:
+
+```bash
+cd ~/projects
+pumu sweep
+```
+
+### Bulk Cleanup with Selective Reinstall
+
+Clean everything but only reinstall active projects:
+
+```bash
+cd ~/dev
+pumu sweep --reinstall
+# Select all for deletion
+# Select only active projects for reinstall
+```
+
+### Archive Old Projects
+
+Before archiving projects, remove their dependencies:
+
+```bash
+cd ~/archive
+pumu sweep --no-select
+tar -czf archive.tar.gz ~/archive
+```
+
+### Clean Before Backup
+
+Reduce backup size by removing dependency folders:
+
+```bash
+pumu sweep --path ~/projects
+# Then run your backup
+```
+
+### CI/CD Cache Cleanup
+
+In automated scripts, use `--no-select` for non-interactive cleanup:
+
+```bash
+pumu sweep --no-select --path /tmp/build-cache
+```
+
+## Performance
+
+- **Concurrent deletion** - Multiple folders are deleted simultaneously for speed
+- **Atomic operations** - Thread-safe accumulation of deleted space using atomic operations
+- **Smart path skipping** - Automatically ignores system folders and caches
+- **Error handling** - Continues processing even if individual deletions fail
+
+## Safety Features
+
+<Note>
+  Sweep only removes **known dependency folders** (node_modules, target, .venv, etc.). Your source code and other files are never touched.
+</Note>
+
+- **Interactive selection by default** - You choose what gets deleted
+- **Smart folder detection** - Only removes recognized dependency/build folders
+- **Concurrent safe** - Uses mutexes and atomic operations to prevent race conditions
+- **Graceful error handling** - Shows errors but continues with remaining deletions
+- **Skips system paths** - Automatically ignores `.git`, `.cache`, system folders
+
+## Related Commands
+
+- [`list`](/commands/list) - Preview what sweep will find (dry-run)
+- [`prune`](/commands/prune) - Smart cleanup based on staleness score
+- [`repair`](/commands/repair) - Fix corrupted dependencies instead of deleting
+- [Default mode](/commands/default-mode) - Refresh a single project directory

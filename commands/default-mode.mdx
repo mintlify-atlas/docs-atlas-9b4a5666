@@ -1,0 +1,161 @@
+---
+title: "Default Mode (Refresh)"
+description: "Refresh the current directory by removing and reinstalling dependencies"
+---
+
+## Overview
+
+When you run `pumu` without any subcommand, it operates in **default mode** (also called "refresh mode"). This mode automatically detects the package manager in the current directory, removes its dependency folder, and reinstalls all dependencies.
+
+This is useful when you want to quickly refresh a single project's dependencies without scanning your entire filesystem.
+
+## Usage
+
+```bash
+pumu [flags]
+```
+
+## Flags
+
+<ParamField path="-p, --path" type="string" default=".">
+  Root path to scan and refresh. Defaults to the current directory.
+</ParamField>
+
+<ParamField path="-v, --version" type="boolean" default="false">
+  Display the version of pumu and exit.
+</ParamField>
+
+<ParamField path="-h, --help" type="boolean" default="false">
+  Display help information for pumu.
+</ParamField>
+
+## How It Works
+
+1. **Detects** the package manager by checking for lockfiles and manifests in priority order:
+   - Bun (`bun.lockb`, `bun.lock`)
+   - pnpm (`pnpm-lock.yaml`)
+   - Yarn (`yarn.lock`)
+   - npm (`package-lock.json`)
+   - Deno (`deno.json`, `deno.jsonc`)
+   - Cargo (`Cargo.toml`)
+   - Go (`go.mod`)
+   - Pip (`requirements.txt`, `pyproject.toml`)
+
+2. **Removes** the corresponding dependency folder (`node_modules`, `target`, `.venv`, etc.)
+
+3. **Reinstalls** dependencies using the detected package manager
+
+## Examples
+
+### Refresh Current Directory
+
+Run pumu in your project directory to refresh dependencies:
+
+```bash
+cd ~/projects/webapp
+pumu
+```
+
+**Example Output:**
+
+```
+Running refresh in current directory...
+🔍 Detected package manager: npm
+🗑️  Removing node_modules...
+✅ Removed in 1.23s
+📦 Running npm install...
+[npm install output...]
+🎉 Refresh complete!
+```
+
+### Refresh Specific Directory
+
+You can specify a different directory using the `--path` flag:
+
+```bash
+pumu --path ~/projects/rust-app
+```
+
+**Example Output:**
+
+```
+Running refresh in /home/user/projects/rust-app...
+🔍 Detected package manager: cargo
+🗑️  Removing target...
+✅ Removed in 2.45s
+📦 Running cargo build...
+[cargo build output...]
+🎉 Refresh complete!
+```
+
+### Check Version
+
+Display the current version of pumu:
+
+```bash
+pumu --version
+# or
+pumu -v
+```
+
+**Example Output:**
+
+```
+pumu version v1.2.1-rc.1
+```
+
+## Common Use Cases
+
+### Fix Broken Dependencies
+
+When your dependencies are in a bad state, refresh them:
+
+```bash
+cd ~/projects/webapp
+pumu
+```
+
+### Clean Install After Branch Switch
+
+After switching git branches, ensure dependencies are fresh:
+
+```bash
+git checkout feature-branch
+pumu
+```
+
+### Reset Development Environment
+
+Quickly reset your project to a clean state:
+
+```bash
+pumu && npm run dev
+```
+
+<Note>
+  Default mode only works when run **inside a project directory** with a detectable package manager. If you want to scan multiple projects recursively, use the [`sweep`](/commands/sweep) command instead.
+</Note>
+
+<Warning>
+  This command will **delete** your dependency folder. Make sure you have your lockfile committed to version control so dependencies can be restored exactly.
+</Warning>
+
+## Supported Package Managers
+
+| Package Manager | Detection File | Dependency Folder | Install Command |
+|----------------|----------------|-------------------|------------------|
+| Bun | `bun.lockb`, `bun.lock` | `node_modules` | `bun install` |
+| pnpm | `pnpm-lock.yaml` | `node_modules` | `pnpm install` |
+| Yarn | `yarn.lock` | `node_modules` | `yarn install` |
+| npm | `package-lock.json` | `node_modules` | `npm install` |
+| Deno | `deno.json`, `deno.jsonc` | `node_modules` | `deno install` |
+| Cargo | `Cargo.toml` | `target` | `cargo build` |
+| Go | `go.mod` | N/A | `go mod download` |
+| Pip | `requirements.txt`, `pyproject.toml` | `.venv` | `pip install` |
+
+## Related Commands
+
+- [`list`](/commands/list) - Preview heavy folders without deleting
+- [`sweep`](/commands/sweep) - Delete dependency folders across multiple projects
+- [`repair`](/commands/repair) - Fix corrupted dependencies automatically
+- [`prune`](/commands/prune) - Smart cleanup based on staleness score

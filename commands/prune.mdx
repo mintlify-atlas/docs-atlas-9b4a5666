@@ -1,0 +1,331 @@
+---
+title: "prune"
+description: "Smart cleanup using staleness scores - only remove what's safe"
+---
+
+## Overview
+
+The `prune` command intelligently analyzes dependency folders and removes only those that are truly safe to delete. Unlike `sweep`, which lets you choose what to delete, `prune` uses a **staleness score** (0-100) to automatically determine what should be removed.
+
+This is the safest automated cleanup option - perfect for regular maintenance without risking active projects.
+
+## Usage
+
+```bash
+pumu prune [flags]
+```
+
+## Flags
+
+<ParamField path="-p, --path" type="string" default=".">
+  Root path to scan. Defaults to the current directory. Scans recursively through all subdirectories.
+</ParamField>
+
+<ParamField path="--threshold" type="integer" default="50">
+  Minimum staleness score required to prune (0-100). Only folders with scores at or above this threshold are deleted. Higher values = more conservative.
+</ParamField>
+
+<ParamField path="--dry-run" type="boolean" default="false">
+  Only analyze and list folders with their scores - don't delete anything. Use this to preview what would be pruned.
+</ParamField>
+
+<ParamField path="-h, --help" type="boolean" default="false">
+  Display help information for the prune command.
+</ParamField>
+
+## Examples
+
+### Prune with Default Threshold
+
+Remove folders with staleness score ≥ 50:
+
+```bash
+pumu prune
+```
+
+**Example Output:**
+
+```
+🌿 Pruning safely deletable folders in '.'...
+⏱️  Found 5 folders. Analyzing...
+
+Folder Path                                             | Size       | Score | Reason
+./old-project/node_modules                              | 456.78 MB  |   95 | 🔴 No lockfile (orphan)
+./webapp/.next                                          | 234.56 MB  |   90 | 🟢 Build cache (re-generable)
+./api/node_modules                                      | 189.00 MB  |   60 | 🟡 Lockfile stale (45 days)
+./active-project/node_modules                            | 567.89 MB  |   20 | ⚪ Active project (skipped)
+./wip/target                                             | 890.12 MB  |   15 | ⚪ Uncommitted changes (skipped)
+
+----------------------------------------------
+🌿 Prune complete! Removed 3 folders (score ≥ 50).
+💾 Space freed: 880.34 MB (of 2.34 GB total found)
+```
+
+### Preview with Dry Run
+
+See what would be pruned without deleting:
+
+```bash
+pumu prune --dry-run
+```
+
+**Example Output:**
+
+```
+🌿 Analyzing folders (dry-run mode)...
+⏱️  Found 8 folders. Calculating scores...
+
+Folder Path                                             | Size       | Score | Reason
+./abandoned/node_modules                                 | 678.90 MB  |   95 | 🔴 No lockfile (orphan)
+./old-app/.next                                          | 345.67 MB  |   90 | 🟢 Build cache (re-generable)
+./archive/target                                         | 1.23 GB    |   80 | 🟡 Lockfile stale (90+ days)
+./legacy/node_modules                                    | 234.56 MB  |   70 | 🟡 Lockfile stale (60 days)
+./test-project/.venv                                     | 123.45 MB  |   60 | 🟡 Lockfile stale (45 days)
+./current-work/node_modules                              | 456.78 MB  |   45 | ⚪ Recent lockfile (skipped)
+./active/target                                          | 890.12 MB  |   20 | ⚪ Active project (skipped)
+./dev/.svelte-kit                                        | 67.89 MB   |   15 | ⚪ Uncommitted changes (skipped)
+
+----------------------------------------------
+🌿 Dry-run complete! Would remove 5 folders (score ≥ 50).
+💾 Space that would be freed: 2.66 GB (of 4.04 GB total found)
+```
+
+### Conservative Pruning (High Threshold)
+
+Only remove folders with very high staleness scores:
+
+```bash
+pumu prune --threshold 80
+```
+
+**Example Output:**
+
+```
+🌿 Pruning folders with score ≥ 80...
+⏱️  Found 5 folders. Analyzing...
+
+Folder Path                                             | Size       | Score | Reason
+./old-project/node_modules                              | 456.78 MB  |   95 | 🔴 No lockfile (orphan)
+./webapp/.next                                          | 234.56 MB  |   90 | 🟢 Build cache (re-generable)
+./api/node_modules                                      | 189.00 MB  |   60 | 🟡 Lockfile stale (skipped)
+./active-project/node_modules                            | 567.89 MB  |   20 | ⚪ Active project (skipped)
+./wip/target                                             | 890.12 MB  |   15 | ⚪ Uncommitted changes (skipped)
+
+----------------------------------------------
+🌿 Prune complete! Removed 2 folders (score ≥ 80).
+💾 Space freed: 691.34 MB (of 2.34 GB total found)
+```
+
+### Aggressive Pruning (Low Threshold)
+
+Remove more folders by lowering the threshold:
+
+```bash
+pumu prune --threshold 30
+```
+
+### Prune Specific Directory
+
+Analyze and prune a specific path:
+
+```bash
+pumu prune --path ~/old-projects
+```
+
+### Preview Before Pruning
+
+Always preview first on important directories:
+
+```bash
+pumu prune --dry-run --path ~/projects
+# Review the output
+pumu prune --path ~/projects  # Now prune for real
+```
+
+## Staleness Scoring System
+
+Each folder is assigned a score from 0 to 100 based on multiple heuristics:
+
+| Score Range | Reason | Description |
+|-------------|--------|-------------|
+| **90-95** | Orphan folder (no lockfile) | Dependency folder exists but no lockfile found - likely abandoned |
+| **90** | Build cache | Re-generable folders like `.next`, `.svelte-kit`, `dist`, `build` |
+| **80** | Lockfile very stale (90+ days) | Lockfile hasn't been modified in over 3 months |
+| **70** | Lockfile stale (60 days) | Lockfile hasn't been modified in 2-3 months |
+| **60** | Lockfile moderately stale (45 days) | Lockfile hasn't been modified in 1.5-2 months |
+| **45** | Lockfile somewhat stale (30 days) | Lockfile modified within last month |
+| **20** | Active project | Lockfile recently modified (within 30 days) |
+| **15** | Uncommitted changes | Lockfile has uncommitted changes in git |
+
+<Note>
+  Folders with scores below the threshold are **automatically skipped** - they won't be deleted.
+</Note>
+
+## How Prune Works
+
+1. **Scans recursively** - Finds all dependency folders
+2. **Analyzes each folder** - Checks for:
+   - Presence of lockfile (package-lock.json, Cargo.lock, etc.)
+   - Lockfile modification time (staleness)
+   - Git status (uncommitted changes)
+   - Folder type (build cache vs. dependencies)
+3. **Calculates score** - Assigns a staleness score (0-100)
+4. **Compares to threshold** - Only folders with score ≥ threshold are deleted
+5. **Deletes selected folders** - Removes folders that meet the threshold (unless --dry-run)
+6. **Reports results** - Shows what was deleted and how much space was freed
+
+## Scoring Heuristics Details
+
+### Orphan Detection
+
+If a dependency folder exists but no corresponding lockfile is found, it scores **95** (very high). This usually means:
+- The lockfile was deleted
+- The project was abandoned mid-setup
+- The folder is left over from a failed installation
+
+### Build Cache Detection
+
+Folders like `.next`, `.svelte-kit`, `dist`, `build` score **90** because:
+- They're re-generated by build tools
+- Safe to delete anytime
+- Can always be rebuilt from source
+
+### Lockfile Staleness
+
+The time since the lockfile was last modified determines staleness:
+- **90+ days** → score 80 (very stale)
+- **60-90 days** → score 70 (stale)
+- **45-60 days** → score 60 (moderately stale)
+- **30-45 days** → score 45 (somewhat stale)
+- **Less than 30 days** → score 20 (active)
+
+### Git Integration
+
+If the lockfile has uncommitted changes (detected via git), the score drops to **15** because:
+- The project is actively being worked on
+- Changes haven't been committed yet
+- High risk of disrupting active work
+
+## Threshold Recommendations
+
+| Threshold | Use Case | What Gets Deleted |
+|-----------|----------|------------------|
+| **80-100** | Very conservative | Only orphans, build caches, and very stale projects (90+ days) |
+| **60-79** | Conservative | Orphans, build caches, and stale projects (45+ days) |
+| **50** (default) | Balanced | Orphans, build caches, and moderately stale projects (30+ days) |
+| **30-49** | Aggressive | Everything except very active projects |
+| **0-29** | Very aggressive | Almost everything (use with caution) |
+
+<Tip>
+  Start with `--dry-run` and a higher threshold (like 80), then gradually lower it as you gain confidence in the scoring.
+</Tip>
+
+## Common Use Cases
+
+### Regular Maintenance
+
+Run prune weekly to keep your workspace clean:
+
+```bash
+pumu prune --path ~/projects
+```
+
+### Safe Cleanup Before Backup
+
+Remove stale folders before backing up:
+
+```bash
+pumu prune --threshold 70 --path ~/dev
+# Then run your backup
+```
+
+### Clean Up Old Projects
+
+Focus on an archive directory:
+
+```bash
+pumu prune --path ~/archive --threshold 60
+```
+
+### Preview Impact
+
+See what would be deleted before committing:
+
+```bash
+pumu prune --dry-run
+```
+
+### Conservative Cleanup
+
+Only remove extremely stale folders:
+
+```bash
+pumu prune --threshold 90
+```
+
+### Aggressive Space Reclaim
+
+When you really need disk space:
+
+```bash
+pumu prune --threshold 40 --path ~/old-work
+```
+
+## Prune vs. Sweep
+
+| Feature | `prune` | `sweep` |
+|---------|---------|----------|
+| **Selection method** | Automatic (score-based) | Manual (interactive UI) |
+| **Safety** | Very safe (skips active projects) | Safe (you choose what to delete) |
+| **Speed** | Fast (automated) | Slower (requires interaction) |
+| **Use case** | Regular maintenance | One-time cleanups |
+| **Dry-run** | Yes (`--dry-run`) | No (use `list` instead) |
+| **Customization** | Threshold parameter | Interactive selection |
+| **Best for** | Automation, cron jobs | Manual cleanup sessions |
+
+<Note>
+  Use `prune` for regular automated cleanup. Use `sweep` when you want full control over what gets deleted.
+</Note>
+
+## Automation Example
+
+Add to your shell profile for weekly cleanup:
+
+```bash
+# In ~/.bashrc or ~/.zshrc
+alias weekly-cleanup="pumu prune --path ~/projects --threshold 70"
+```
+
+Or create a cron job:
+
+```bash
+# Run prune every Sunday at 2am
+0 2 * * 0 /usr/local/bin/pumu prune --path ~/projects --threshold 60
+```
+
+## Safety Features
+
+- **Automatic skipping of active projects** - Low scores protect recent work
+- **Git integration** - Detects uncommitted changes
+- **Dry-run mode** - Preview before deleting
+- **Threshold control** - Adjust aggressiveness to your comfort level
+- **Smart scoring** - Multiple heuristics prevent false positives
+- **Graceful error handling** - Continues even if some folders fail
+
+<Warning>
+  While prune is very safe, always start with `--dry-run` on important directories to verify the scoring matches your expectations.
+</Warning>
+
+## Limitations
+
+- **Git dependency** - Uncommitted change detection requires git
+- **Time-based only** - Doesn't detect compile errors or corruption (use [`repair`](/commands/repair) for that)
+- **Conservative scoring** - May miss some folders that could be safely deleted
+- **Lockfile required** - Relies on lockfile timestamps for staleness detection
+
+## Related Commands
+
+- [`list`](/commands/list) - Preview all folders without scoring
+- [`sweep`](/commands/sweep) - Manual selection and deletion
+- [`repair`](/commands/repair) - Fix corrupted dependencies
+- [Default mode](/commands/default-mode) - Refresh a single project

@@ -1,0 +1,240 @@
+---
+title: 'Scanner'
+description: 'Core scanning and cleaning logic for heavy dependency folders'
+---
+
+The `scanner` package provides the primary logic for scanning directories, detecting heavy dependency folders, and cleaning them up. It supports concurrent scanning, interactive selection, and optional reinstallation.
+
+## Overview
+
+The scanner module is the heart of Pumu's functionality, offering three main operations:
+
+- **Sweep**: Find and delete heavy dependency folders
+- **Repair**: Detect broken dependencies and repair them
+- **Refresh**: Clean and reinstall dependencies for the current directory
+
+All operations support concurrent processing for maximum performance.
+
+## Types
+
+### TargetFolder
+
+Represents a detected heavy dependency folder with its calculated size.
+
+```go
+type TargetFolder struct {
+    Path string  // Absolute path to the folder
+    Size int64   // Total size in bytes
+}
+```
+
+## Functions
+
+### SweepDir
+
+Scans a root directory for heavy dependency folders and optionally deletes them.
+
+```go
+func SweepDir(root string, dryRun bool, reinstall bool, noSelect bool) error
+```
+
+<ParamField path="root" type="string" required>
+  The root directory to scan for heavy dependency folders
+</ParamField>
+
+<ParamField path="dryRun" type="bool" required>
+  If true, only lists folders without deleting them (list-only mode)
+</ParamField>
+
+<ParamField path="reinstall" type="bool" required>
+  If true, automatically reinstalls dependencies after deletion
+</ParamField>
+
+<ParamField path="noSelect" type="bool" required>
+  If true, skips interactive selection and processes all found folders
+</ParamField>
+
+<ResponseField name="error" type="error">
+  Returns an error if scanning fails, nil on success
+</ResponseField>
+
+#### How it works
+
+1. Recursively scans the directory tree for known dependency folders
+2. Calculates sizes concurrently (max 20 parallel operations)
+3. Presents an interactive selection UI (unless `noSelect` is true)
+4. Deletes selected folders concurrently
+5. Optionally reinstalls dependencies if `reinstall` is true
+
+#### Example usage
+
+```go
+// From cmd/sweep.go
+func RunE(cmd *cobra.Command, args []string) error {
+    path, _ := cmd.Root().PersistentFlags().GetString("path")
+    reinstall, _ := cmd.Flags().GetBool("reinstall")
+    noSelect, _ := cmd.Flags().GetBool("no-select")
+    
+    return scanner.SweepDir(path, false, reinstall, noSelect)
+}
+```
+
+---
+
+### RepairDir
+
+Scans for projects with broken dependencies and automatically repairs them.
+
+```go
+func RepairDir(root string, verbose bool) error
+```
+
+<ParamField path="root" type="string" required>
+  The root directory to scan for projects
+</ParamField>
+
+<ParamField path="verbose" type="bool" required>
+  If true, shows detailed output including healthy projects
+</ParamField>
+
+<ResponseField name="error" type="error">
+  Returns an error if scanning fails, nil on success
+</ResponseField>
+
+#### How it works
+
+1. Finds all projects by detecting package managers
+2. Runs health checks on each project using `pkg.CheckHealth()`
+3. For unhealthy projects:
+   - Displays detected issues
+   - Removes the dependency folder (node_modules, target, .venv, etc.)
+   - Reinstalls dependencies
+4. Reports summary of repaired projects
+
+#### Example usage
+
+```go
+// Internal implementation from repair.go
+for _, proj := range projects {
+    result := pkg.CheckHealth(proj.Dir, proj.PM)
+    
+    if !result.Healthy {
+        // Display issues
+        for _, issue := range result.Issues {
+            color.Red("   ❌ %s", issue)
+        }
+        
+        // Remove and reinstall
+        targetFolder := getTargetFolder(proj.PM)
+        targetPath := filepath.Join(proj.Dir, targetFolder)
+        pkg.RemoveDirectory(targetPath)
+        pkg.InstallDependencies(proj.Dir, proj.PM, true)
+    }
+}
+```
+
+---
+
+### RefreshCurrentDir
+
+Detects the package manager in the current directory, removes dependencies, and reinstalls them.
+
+```go
+func RefreshCurrentDir() error
+```
+
+<ResponseField name="error" type="error">
+  Returns an error if detection fails, removal fails, or installation fails
+</ResponseField>
+
+#### How it works
+
+1. Detects package manager in current directory (`.`)
+2. Returns error if no package manager detected
+3. Removes the appropriate dependency folder (node_modules, target, .venv)
+4. Reinstalls dependencies using the detected package manager
+5. Reports duration and success
+
+#### Example usage
+
+```go
+// Typical usage from CLI
+err := scanner.RefreshCurrentDir()
+if err != nil {
+    return fmt.Errorf("refresh failed: %v", err)
+}
+```
+
+#### Example output
+
+```
+🔍 Detected package manager: npm
+🗑️  Removing node_modules...
+✅ Removed in 1.2s
+📦 Running npm install...
+🎉 Refresh complete!
+```
+
+## Internal Functions
+
+### findTargetFolders
+
+Recursively walks the directory tree to find deletable target folders.
+
+```go
+func findTargetFolders(root string) ([]string, error)
+```
+
+Known deletable targets:
+- `node_modules` (JavaScript/TypeScript)
+- `target` (Rust)
+- `.next` (Next.js)
+- `.svelte-kit` (SvelteKit)
+- `.venv` (Python)
+- `dist` (build output)
+- `build` (build output)
+
+### calculateFolderSizes
+
+Calculates sizes for all target folders concurrently.
+
+```go
+func calculateFolderSizes(targets []string) []TargetFolder
+```
+
+Uses a semaphore (max 20 concurrent) to limit resource usage while maintaining speed.
+
+### selectFolders
+
+Presents an interactive multi-select UI for choosing folders.
+
+```go
+func selectFolders(folders []TargetFolder, title string) ([]TargetFolder, error)
+```
+
+Returns `nil` if user cancels, otherwise returns the filtered list of selected folders.
+
+## Constants
+
+### Ignored Paths
+
+Directories that Pumu never descends into:
+
+```go
+var ignoredPaths = map[string]bool{
+    ".Trash": true, ".cache": true, ".npm": true, ".yarn": true,
+    ".cargo": true, ".rustup": true, "Library": true, "AppData": true,
+    "Local": true, "Roaming": true, ".vscode": true, ".idea": true,
+}
+```
+
+### Deletable Targets
+
+Known heavy dependency and build folders:
+
+```go
+var deletableTargets = map[string]bool{
+    "node_modules": true, "target": true, ".next": true,
+    ".svelte-kit": true, ".venv": true, "dist": true, "build": true,
+}
+```
